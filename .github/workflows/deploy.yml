@@ -1,0 +1,48 @@
+name: Deploy SplitShare production
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: splitshare-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_REVISION: ${{ github.sha }}
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy exact revision
+        run: |
+          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" "DEPLOY_PATH='$DEPLOY_PATH' DEPLOY_REVISION='$DEPLOY_REVISION' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          git fetch --prune origin main
+          git checkout --detach "$DEPLOY_REVISION"
+          docker compose -f compose.production.yaml up -d --build
+          docker compose -f compose.production.yaml exec -T php php artisan migrate --force
+          docker compose -f compose.production.yaml exec -T php php artisan optimize:clear
+          docker compose -f compose.production.yaml exec -T php php artisan config:cache
+          docker compose -f compose.production.yaml exec -T php php artisan route:cache
+          docker compose -f compose.production.yaml exec -T php php artisan view:cache
+          REMOTE
