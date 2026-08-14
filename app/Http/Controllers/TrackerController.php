@@ -12,7 +12,8 @@ use App\Models\TrackerMember;
 use App\Models\User;
 use App\Models\TrackerInvitation;
 use App\Services\TrackerFinance;
-use App\Services\FirebasePush;
+use App\Services\TrackerCache;
+use App\Jobs\SendPushNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,11 +48,11 @@ class TrackerController extends Controller
         return to_route('trackers.show', $tracker)->with('success', 'Tracker created.');
     }
 
-    public function show(Request $request, Tracker $tracker, TrackerFinance $finance): Response
+    public function show(Request $request, Tracker $tracker, TrackerFinance $finance, TrackerCache $cache): Response
     {
         $this->authorize('view', $tracker);
         $membership = $this->membership($tracker, $request->user()->id);
-        $members = $tracker->members()->where('status', 'active')->with('user:id,name,email')->get()->map(fn ($member) => ['id' => $member->user_id, 'name' => $member->user->name, 'email' => $member->user->email, 'role' => $member->role]);
+        $members = collect($cache->activeMembers($tracker))->map(fn ($member) => collect($member)->only(['id', 'name', 'email', 'role'])->all());
         $balances = $finance->memberBalances($tracker);
         $memberData = $members->map(fn ($member) => [...$member, 'balance_minor' => $balances[$member['id']] ?? 0]);
         $expenses = $tracker->expenses()->with(['payer:id,name', 'splits.user:id,name'])->withCount('comments')->orderByDesc('expense_date')->orderByDesc('created_at')->get();
@@ -70,21 +71,21 @@ class TrackerController extends Controller
         ]);
     }
 
-    public function members(Request $request, Tracker $tracker): Response
+    public function members(Request $request, Tracker $tracker, TrackerCache $cache): Response
     {
         $this->authorize('view', $tracker);
         return Inertia::render('Trackers/Members', [
             'tracker' => $tracker,
-            'members' => $tracker->members()->where('status', 'active')->with('user:id,name,email')->get()->map(fn ($member) => ['id' => $member->user_id, 'membership_id' => $member->id, 'name' => $member->user->name, 'email' => $member->user->email, 'role' => $member->role]),
+            'members' => $cache->activeMembers($tracker),
             'invitations' => $tracker->invitations()->where('status', 'pending')->latest()->get(['id', 'email', 'role', 'created_at']),
             'canManage' => $request->user()->can('manageMembers', $tracker),
         ]);
     }
 
-    public function expenseCreate(Request $request, Tracker $tracker): Response
+    public function expenseCreate(Request $request, Tracker $tracker, TrackerCache $cache): Response
     {
         $this->authorize('update', $tracker);
-        return Inertia::render('Expenses/Create', ['tracker' => $tracker, 'members' => $tracker->members()->where('status', 'active')->with('user:id,name,email')->get()->map(fn ($member) => ['id' => $member->user_id, 'name' => $member->user->name, 'role' => $member->role])]);
+        return Inertia::render('Expenses/Create', ['tracker' => $tracker, 'members' => collect($cache->activeMembers($tracker))->map(fn ($member) => collect($member)->only(['id', 'name', 'role'])->all())->values()]);
     }
 
     public function expenseShow(Request $request, Tracker $tracker, Expense $expense): Response
@@ -98,29 +99,33 @@ class TrackerController extends Controller
         return Inertia::render('Expenses/Show', ['tracker' => $tracker, 'expense' => $expense, 'hasMoreComments' => $hasMoreComments, 'canManage' => $request->user()->can('update', $tracker), 'canComment' => $request->user()->can('comment', $tracker), 'currentUserId' => $request->user()->id]);
     }
 
-    public function addMember(Request $request, Tracker $tracker): RedirectResponse
+    public function addMember(Request $request, Tracker $tracker, TrackerCache $cache, TrackerFinance $finance): RedirectResponse
     {
         $this->authorize('manageMembers', $tracker);
         $data = $request->validate(['email' => ['required', 'email'], 'role' => ['required', 'in:editor,commenter,viewer']]);
         $user = User::whereRaw('lower(email) = ?', [strtolower($data['email'])])->first();
         if (! $user) {
             TrackerInvitation::updateOrCreate(['tracker_id' => $tracker->id, 'email' => strtolower($data['email']), 'status' => 'pending'], ['role' => $data['role'], 'invited_by' => $request->user()->id, 'expires_at' => now()->addDays(14)]);
+            $cache->forget($tracker);
             $this->activity($tracker, $request->user()->id, 'invitation.sent', 'invitation', '', ['email' => strtolower($data['email']), 'role' => $data['role']]);
             return back()->with('success', 'Invitation is pending until this email registers.');
         }
         if ($this->membership($tracker, $user->id)) return back()->withErrors(['email' => 'This user is already a tracker member.']);
         TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $user->id, 'role' => $data['role'], 'status' => 'active', 'joined_at' => now(), 'created_by' => $request->user()->id]);
-        app(FirebasePush::class)->send($user, 'You joined '.$tracker->name, $request->user()->name.' added you as a '.$data['role'].'.', ['tracker_id' => $tracker->id]);
+        $cache->forget($tracker);
+        $finance->forget($tracker);
+        SendPushNotification::dispatch($user->id, 'You joined '.$tracker->name, $request->user()->name.' added you as a '.$data['role'].'.', ['tracker_id' => $tracker->id]);
         $this->activity($tracker, $request->user()->id, 'member.joined', 'member', (string) $user->id, ['name' => $user->name, 'role' => $data['role']]);
         return back()->with('success', "$user->name was added to the tracker.");
     }
 
-    public function changeMemberRole(Request $request, Tracker $tracker, TrackerMember $member): RedirectResponse
+    public function changeMemberRole(Request $request, Tracker $tracker, TrackerMember $member, TrackerCache $cache): RedirectResponse
     {
         $this->authorize('manageMembers', $tracker);
         abort_unless($member->tracker_id === $tracker->id && $member->role !== 'owner', 422);
         $data = $request->validate(['role' => ['required', 'in:editor,commenter,viewer']]);
         $oldRole = $member->role; $member->update(['role' => $data['role'], 'updated_by' => $request->user()->id]);
+        $cache->forget($tracker);
         $this->activity($tracker, $request->user()->id, 'member.role_changed', 'member', $member->id, ['old_role' => $oldRole, 'new_role' => $data['role']]);
         return back()->with('success', 'Member role updated.');
     }
@@ -137,10 +142,10 @@ class TrackerController extends Controller
         return to_route('trackers.show', $tracker)->with('success', "{$expense->description} was added.");
     }
 
-    public function settlementCreate(Request $request, Tracker $tracker, TrackerFinance $finance): Response
+    public function settlementCreate(Request $request, Tracker $tracker, TrackerFinance $finance, TrackerCache $cache): Response
     {
         $this->authorize('settle', $tracker);
-        $members = $tracker->members()->where('status', 'active')->with('user:id,name,email')->get()->map(fn ($member) => ['id' => $member->user_id, 'name' => $member->user->name]);
+        $members = collect($cache->activeMembers($tracker))->map(fn ($member) => collect($member)->only(['id', 'name'])->all())->values();
         return Inertia::render('Settlements/Create', ['tracker' => $tracker, 'members' => $members, 'debts' => $finance->directDebts($tracker), 'currentUserId' => $request->user()->id]);
     }
 
@@ -149,12 +154,13 @@ class TrackerController extends Controller
         $this->authorize('settle', $tracker);
         $data = $request->validate(['from_user_id' => ['required', 'integer'], 'to_user_id' => ['required', 'integer', 'different:from_user_id'], 'amount' => ['required', 'regex:/^\d+(\.\d{1,2})?$/'], 'settlement_date' => ['required', 'date'], 'note' => ['nullable', 'string', 'max:2000']]);
         $amount = $this->minor($data['amount']);
-        $debt = collect($finance->directDebts($tracker))->first(fn ($debt) => $debt['from_user_id'] === (int) $data['from_user_id'] && $debt['to_user_id'] === (int) $data['to_user_id']);
+        $debt = collect($finance->directDebts($tracker, false))->first(fn ($debt) => $debt['from_user_id'] === (int) $data['from_user_id'] && $debt['to_user_id'] === (int) $data['to_user_id']);
         if (! $debt || $amount > $debt['amount_minor']) return back()->withErrors(['amount' => 'The settlement cannot be greater than the current direct debt.']);
         DB::transaction(function () use ($tracker, $request, $data, $amount) {
             $settlement = Settlement::create(['tracker_id' => $tracker->id, 'from_user_id' => $data['from_user_id'], 'to_user_id' => $data['to_user_id'], 'amount_minor' => $amount, 'settlement_date' => $data['settlement_date'], 'note' => $data['note'], 'created_by' => $request->user()->id]);
             $this->activity($tracker, $request->user()->id, 'settlement.created', 'settlement', $settlement->id, ['amount_minor' => $amount, 'from_user_id' => $settlement->from_user_id, 'to_user_id' => $settlement->to_user_id]);
         });
+        $finance->forget($tracker);
         return to_route('trackers.show', $tracker)->with('success', 'Settlement recorded and balances updated.');
     }
 

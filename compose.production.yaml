@@ -1,8 +1,27 @@
 services:
   php:
-    build: .
+    image: splitshare-app:latest
+    build:
+      context: .
+      args:
+        VITE_APP_NAME: ${VITE_APP_NAME}
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/}
+        VITE_REVERB_APP_KEY: ${VITE_REVERB_APP_KEY}
+        VITE_REVERB_HOST: ${VITE_REVERB_HOST}
+        VITE_REVERB_PORT: ${VITE_REVERB_PORT}
+        VITE_REVERB_SCHEME: ${VITE_REVERB_SCHEME}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
+        VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY}
     restart: unless-stopped
     env_file: .env
+    environment:
+      APP_URL: https://splitshare.jmgaming.site
+      ASSET_URL: https://splitshare.jmgaming.site
+      SESSION_PATH: /
     volumes:
       - ./storage:/var/www/html/storage
       - ./bootstrap/cache:/var/www/html/bootstrap/cache
@@ -10,34 +29,31 @@ services:
     networks: [splitshare]
 
   queue:
-    build: .
+    image: splitshare-app:latest
     restart: unless-stopped
     env_file: .env
-    command: php artisan queue:work --sleep=2 --tries=3 --max-time=3600
+    command: php artisan queue:work --queue=realtime,default,notifications --sleep=1 --tries=3 --max-time=3600
     volumes:
       - ./storage:/var/www/html/storage
       - ./bootstrap/cache:/var/www/html/bootstrap/cache
       - ./secrets/firebase-service-account.json:/run/secrets/firebase-service-account.json:ro
-    depends_on: [db]
     networks: [splitshare]
 
   scheduler:
-    build: .
+    image: splitshare-app:latest
     restart: unless-stopped
     env_file: .env
     command: php artisan schedule:work
     volumes:
       - ./storage:/var/www/html/storage
       - ./bootstrap/cache:/var/www/html/bootstrap/cache
-    depends_on: [db]
     networks: [splitshare]
 
   reverb:
-    build: .
+    image: splitshare-app:latest
     restart: unless-stopped
     env_file: .env
     command: php artisan reverb:start --host=0.0.0.0 --port=8080
-    depends_on: [db]
     networks: [splitshare]
 
   nginx:
@@ -53,19 +69,6 @@ services:
       - ./docker/nginx/conf.d/production.conf:/etc/nginx/conf.d/default.conf:ro
     networks: [splitshare]
 
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_DATABASE}
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    volumes: [postgres-data:/var/lib/postgresql/data]
-    networks: [splitshare]
-
 networks:
   splitshare:
     driver: bridge
-
-volumes:
-  postgres-data:

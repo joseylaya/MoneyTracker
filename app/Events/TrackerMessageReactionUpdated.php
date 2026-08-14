@@ -4,13 +4,15 @@ namespace App\Events;
 
 use App\Models\TrackerMessage;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class TrackerMessageReactionUpdated implements ShouldBroadcastNow
+class TrackerMessageReactionUpdated implements ShouldBroadcast
 {
     use Dispatchable, SerializesModels;
+
+    public string $queue = 'realtime';
 
     public function __construct(public TrackerMessage $message) {}
 

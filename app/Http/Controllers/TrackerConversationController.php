@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\TrackerMessageCreated;
 use App\Events\TrackerMessageReactionUpdated;
 use App\Events\TrackerSettlementRequestUpdated;
+use App\Jobs\SendPushNotification;
 use App\Models\Settlement;
 use App\Models\Tracker;
 use App\Models\TrackerMember;
@@ -12,7 +13,7 @@ use App\Models\TrackerMessage;
 use App\Models\TrackerMessageAttachment;
 use App\Models\TrackerSettlementRequest;
 use App\Services\TrackerFinance;
-use App\Services\FirebasePush;
+use App\Services\TrackerCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -23,7 +24,7 @@ use Inertia\Response;
 
 class TrackerConversationController extends Controller
 {
-    public function index(Request $request, Tracker $tracker, TrackerFinance $finance): Response
+    public function index(Request $request, Tracker $tracker, TrackerFinance $finance, TrackerCache $cache): Response
     {
         $this->authorize('view', $tracker);
         $membership = TrackerMember::where('tracker_id', $tracker->id)->where('user_id', $request->user()->id)->where('status', 'active')->firstOrFail();
@@ -31,14 +32,14 @@ class TrackerConversationController extends Controller
         $hasMoreMessages = $messages->count() > 10;
         $messages = $messages->take(10)->sortBy('created_at')->values();
         $membership->update(['last_read_chat_at' => $messages->last()?->created_at ?? now()]);
-        $members = $tracker->members()->where('status', 'active')->with('user:id,name')->get()->keyBy('user_id');
+        $members = collect($cache->activeMembers($tracker))->keyBy('id');
         return Inertia::render('Trackers/Conversation', [
             'tracker' => $tracker,
             'messages' => $messages->map(fn ($message) => $this->messageData($message, $request->user()->id)),
             'hasMoreMessages' => $hasMoreMessages,
             'currentUserId' => $request->user()->id,
             'canChat' => $request->user()->can('chat', $tracker),
-            'settlementOptions' => collect($finance->directDebts($tracker))->where('from_user_id', $request->user()->id)->map(fn ($debt) => ['to_user_id' => $debt['to_user_id'], 'to_name' => $members[$debt['to_user_id']]?->user?->name ?? 'Member', 'amount_minor' => $debt['amount_minor']])->values(),
+            'settlementOptions' => collect($finance->directDebts($tracker))->where('from_user_id', $request->user()->id)->map(fn ($debt) => ['to_user_id' => $debt['to_user_id'], 'to_name' => $members->get($debt['to_user_id'])['name'] ?? 'Member', 'amount_minor' => $debt['amount_minor']])->values(),
         ]);
     }
 
@@ -50,10 +51,10 @@ class TrackerConversationController extends Controller
         return response()->json(['messages' => $messages->take(10)->sortBy('created_at')->values()->map(fn ($message) => $this->messageData($message, $request->user()->id)), 'has_more' => $messages->count() > 10]);
     }
 
-    public function store(Request $request, Tracker $tracker): RedirectResponse
+    public function store(Request $request, Tracker $tracker): RedirectResponse|JsonResponse
     {
         abort_unless($request->user()->can('chat', $tracker), 403);
-        $data = $request->validate(['body' => ['nullable', 'string', 'max:2000'], 'attachment' => ['nullable', 'file', 'max:10240', 'mimetypes:image/jpeg,image/png,image/webp,application/pdf']]);
+        $data = $request->validate(['body' => ['nullable', 'string', 'max:2000'], 'attachment' => ['nullable', 'file', 'max:10240', 'mimetypes:image/jpeg,image/png,image/webp,application/pdf'], 'client_message_id' => ['nullable', 'uuid']]);
         abort_if(!trim($data['body'] ?? '') && ! $request->hasFile('attachment'), 422, 'Write a message or choose an attachment.');
         $message = DB::transaction(function () use ($request, $tracker, $data) {
             $message = TrackerMessage::create(['tracker_id' => $tracker->id, 'user_id' => $request->user()->id, 'body' => trim($data['body'] ?? '')]);
@@ -63,8 +64,14 @@ class TrackerConversationController extends Controller
             return $message;
         })->load(['author:id,name', 'attachments']);
         TrackerMember::where('tracker_id', $tracker->id)->where('user_id', $request->user()->id)->where('status', 'active')->update(['last_read_chat_at' => $message->created_at]);
-        TrackerMessageCreated::dispatch($message);
+        TrackerMessageCreated::dispatch($message, $data['client_message_id'] ?? null);
         $this->notifyMembers($tracker, $request->user()->id, 'New message in '.$tracker->name, trim($message->body) ?: 'Sent an attachment', ['tracker_id' => $tracker->id]);
+        if ($request->expectsJson()) {
+            return response()->json([
+                'client_message_id' => $data['client_message_id'] ?? null,
+                'message' => $this->messageData($message, $request->user()->id),
+            ], 201);
+        }
         return back();
     }
 
@@ -73,14 +80,14 @@ class TrackerConversationController extends Controller
         abort_unless($request->user()->can('chat', $tracker), 403);
         $data = $request->validate(['to_user_id' => ['required', 'integer'], 'amount' => ['required', 'regex:/^\d+(\.\d{1,2})?$/'], 'settlement_date' => ['required', 'date'], 'note' => ['nullable', 'string', 'max:1000']]);
         $amount = $this->minor($data['amount']);
-        $debt = collect($finance->directDebts($tracker))->first(fn ($item) => $item['from_user_id'] === $request->user()->id && $item['to_user_id'] === (int) $data['to_user_id']);
+        $debt = collect($finance->directDebts($tracker, false))->first(fn ($item) => $item['from_user_id'] === $request->user()->id && $item['to_user_id'] === (int) $data['to_user_id']);
         abort_unless($debt && $amount <= $debt['amount_minor'], 422);
         $message = DB::transaction(function () use ($request, $tracker, $data, $amount) {
             $settlementRequest = TrackerSettlementRequest::create(['tracker_id' => $tracker->id, 'from_user_id' => $request->user()->id, 'to_user_id' => $data['to_user_id'], 'amount_minor' => $amount, 'settlement_date' => $data['settlement_date'], 'note' => $data['note'] ?? null]);
             return TrackerMessage::create(['tracker_id' => $tracker->id, 'user_id' => $request->user()->id, 'body' => '', 'type' => 'settlement_request', 'settlement_request_id' => $settlementRequest->id]);
         })->load(['author:id,name', 'attachments', 'settlementRequest.fromUser:id,name', 'settlementRequest.toUser:id,name']);
         TrackerMessageCreated::dispatch($message);
-        app(FirebasePush::class)->send($message->settlementRequest->toUser, 'Settlement approval requested', $request->user()->name.' requested approval for a settlement in '.$tracker->name, ['tracker_id' => $tracker->id]);
+        SendPushNotification::dispatch($message->settlementRequest->to_user_id, 'Settlement approval requested', $request->user()->name.' requested approval for a settlement in '.$tracker->name, ['tracker_id' => $tracker->id]);
         return back();
     }
 
@@ -90,13 +97,14 @@ class TrackerConversationController extends Controller
         $data = $request->validate(['decision' => ['required', 'in:approved,declined']]);
         DB::transaction(function () use ($data, $settlementRequest, $request, $tracker, $finance) {
             if ($data['decision'] === 'declined') { $settlementRequest->update(['status' => 'declined', 'responded_by' => $request->user()->id, 'responded_at' => now()]); return; }
-            $debt = collect($finance->directDebts($tracker))->first(fn ($item) => $item['from_user_id'] === $settlementRequest->from_user_id && $item['to_user_id'] === $settlementRequest->to_user_id);
+            $debt = collect($finance->directDebts($tracker, false))->first(fn ($item) => $item['from_user_id'] === $settlementRequest->from_user_id && $item['to_user_id'] === $settlementRequest->to_user_id);
             abort_unless($debt && $settlementRequest->amount_minor <= $debt['amount_minor'], 422);
             $settlement = Settlement::create(['tracker_id' => $tracker->id, 'from_user_id' => $settlementRequest->from_user_id, 'to_user_id' => $settlementRequest->to_user_id, 'amount_minor' => $settlementRequest->amount_minor, 'settlement_date' => $settlementRequest->settlement_date, 'note' => $settlementRequest->note, 'created_by' => $settlementRequest->from_user_id]);
             $settlementRequest->update(['status' => 'approved', 'approved_settlement_id' => $settlement->id, 'responded_by' => $request->user()->id, 'responded_at' => now()]);
         });
+        $finance->forget($tracker);
         TrackerSettlementRequestUpdated::dispatch($settlementRequest->fresh());
-        app(FirebasePush::class)->send($settlementRequest->fromUser, 'Settlement '.$settlementRequest->status, $request->user()->name.' '.$settlementRequest->status.' your settlement request in '.$tracker->name, ['tracker_id' => $tracker->id]);
+        SendPushNotification::dispatch($settlementRequest->from_user_id, 'Settlement '.$settlementRequest->status, $request->user()->name.' '.$settlementRequest->status.' your settlement request in '.$tracker->name, ['tracker_id' => $tracker->id]);
         return back();
     }
 
@@ -124,5 +132,5 @@ class TrackerConversationController extends Controller
 
     private function minor(string $amount): int { [$whole, $fraction] = array_pad(explode('.', $amount, 2), 2, ''); return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0'); }
     private function messageQuery(Tracker $tracker) { return $tracker->messages()->with(['author:id,name', 'reactions:id,tracker_message_id,user_id,emoji', 'attachments', 'settlementRequest.fromUser:id,name', 'settlementRequest.toUser:id,name']); }
-    private function notifyMembers(Tracker $tracker, int $exceptUserId, string $title, string $body, array $data): void { $tracker->members()->where('status','active')->where('user_id','!=',$exceptUserId)->with('user')->get()->each(fn ($member) => app(FirebasePush::class)->send($member->user, $title, $body, $data)); }
+    private function notifyMembers(Tracker $tracker, int $exceptUserId, string $title, string $body, array $data): void { $tracker->members()->where('status','active')->where('user_id','!=',$exceptUserId)->pluck('user_id')->each(fn ($userId) => SendPushNotification::dispatch($userId, $title, $body, $data)); }
 }

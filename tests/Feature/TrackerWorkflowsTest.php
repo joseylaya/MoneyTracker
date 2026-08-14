@@ -85,6 +85,22 @@ class TrackerWorkflowsTest extends TestCase
         $this->actingAs($viewer)->post(route('trackers.conversation.reactions.store', [$tracker, $message]), ['emoji' => '👍'])->assertForbidden();
     }
 
+    public function test_chat_send_returns_the_saved_message_for_the_optimistic_client_bubble(): void
+    {
+        $owner = User::factory()->create();
+        $tracker = $this->tracker($owner);
+        $clientMessageId = '0751e359-6b71-4a87-9b3b-0ed5c5d7d461';
+
+        $response = $this->actingAs($owner)
+            ->withHeaders(['Accept' => 'application/json', 'X-Requested-With' => 'XMLHttpRequest'])
+            ->post(route('trackers.conversation.store', $tracker), ['body' => 'Saved without a duplicate.', 'client_message_id' => $clientMessageId]);
+
+        $response->assertCreated()
+            ->assertJsonPath('client_message_id', $clientMessageId)
+            ->assertJsonPath('message.body', 'Saved without a duplicate.')
+            ->assertJsonPath('message.author.id', $owner->id);
+    }
+
     public function test_opening_a_conversation_marks_messages_as_read_for_that_member(): void
     {
         $owner = User::factory()->create(); $member = User::factory()->create(); $tracker = $this->tracker($owner);

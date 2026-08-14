@@ -3,7 +3,10 @@ import laravel from 'laravel-vite-plugin';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const basePath = process.env.VITE_BASE_PATH || '/';
+
 export default defineConfig({
+    base: basePath,
     plugins: [
         laravel({
             input: 'resources/js/app.jsx',
@@ -19,10 +22,10 @@ export default defineConfig({
                 theme_color: '#0f766e',
                 background_color: '#f8fafc',
                 display: 'standalone',
-                start_url: '/',
+                start_url: basePath,
                 icons: [
                     {
-                        src: '/icons/splitshare.svg',
+                        src: `${basePath}icons/splitshare.svg`,
                         sizes: 'any',
                         type: 'image/svg+xml',
                         purpose: 'any maskable',

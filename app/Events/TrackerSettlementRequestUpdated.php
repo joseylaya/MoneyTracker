@@ -4,13 +4,15 @@ namespace App\Events;
 
 use App\Models\TrackerSettlementRequest;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class TrackerSettlementRequestUpdated implements ShouldBroadcastNow
+class TrackerSettlementRequestUpdated implements ShouldBroadcast
 {
     use Dispatchable, SerializesModels;
+
+    public string $queue = 'realtime';
     public function __construct(public TrackerSettlementRequest $settlementRequest) {}
     public function broadcastOn(): array { return [new PrivateChannel('tracker.'.$this->settlementRequest->tracker_id)]; }
     public function broadcastAs(): string { return 'tracker.settlement-request.updated'; }

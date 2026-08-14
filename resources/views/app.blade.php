@@ -3,11 +3,12 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
 
         <title inertia>{{ config('app.name', 'SplitShare') }}</title>
         <meta name="theme-color" content="#0f766e">
-        <link rel="manifest" href="/build/manifest.webmanifest">
-        <link rel="apple-touch-icon" href="/icons/splitshare.svg">
+        <link rel="manifest" href="{{ asset('build/manifest.webmanifest') }}">
+        <link rel="apple-touch-icon" href="{{ asset('icons/splitshare.svg') }}">
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
@@ -15,6 +16,9 @@
 
         <!-- Scripts -->
         @routes
+        <script>
+            Ziggy.url = @json(config('app.url'));
+        </script>
         @viteReactRefresh
         @vite(['resources/js/app.jsx', "resources/js/Pages/{$page['component']}.jsx"])
         @inertiaHead

@@ -18,7 +18,8 @@ return new class extends Migration
             $table->date('settlement_date');
             $table->text('note')->nullable();
             $table->string('status', 20)->default('pending');
-            $table->foreignId('approved_settlement_id')->nullable()->constrained('settlements')->nullOnDelete();
+            $table->uuid('approved_settlement_id')->nullable();
+            $table->foreign('approved_settlement_id')->references('id')->on('settlements')->nullOnDelete();
             $table->foreignId('responded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('responded_at')->nullable();
             $table->timestamps();

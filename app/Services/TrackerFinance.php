@@ -5,11 +5,18 @@ namespace App\Services;
 use App\Models\Expense;
 use App\Models\Settlement;
 use App\Models\Tracker;
+use Illuminate\Support\Facades\Cache;
 
 class TrackerFinance
 {
     /** @return array<int, int> user id => balance in minor units */
     public function memberBalances(Tracker $tracker): array
+    {
+        return Cache::remember($this->balancesKey($tracker), 60, fn () => $this->calculateMemberBalances($tracker));
+    }
+
+    /** @return array<int, int> user id => balance in minor units */
+    private function calculateMemberBalances(Tracker $tracker): array
     {
         $balances = $tracker->members()->where('status', 'active')->pluck('user_id')->mapWithKeys(fn ($id) => [$id => 0])->all();
         $expenses = Expense::with('splits')->where('tracker_id', $tracker->id)->whereNull('deleted_at')->get();
@@ -27,7 +34,23 @@ class TrackerFinance
     }
 
     /** @return array<int, array{from_user_id:int,to_user_id:int,amount_minor:int}> */
-    public function directDebts(Tracker $tracker): array
+    public function directDebts(Tracker $tracker, bool $useCache = true): array
+    {
+        if (! $useCache) {
+            return $this->calculateDirectDebts($tracker);
+        }
+
+        return Cache::remember($this->debtsKey($tracker), 30, fn () => $this->calculateDirectDebts($tracker));
+    }
+
+    public function forget(Tracker $tracker): void
+    {
+        Cache::forget($this->balancesKey($tracker));
+        Cache::forget($this->debtsKey($tracker));
+    }
+
+    /** @return array<int, array{from_user_id:int,to_user_id:int,amount_minor:int}> */
+    private function calculateDirectDebts(Tracker $tracker): array
     {
         $debts = [];
         $add = function (int $from, int $to, int $amount) use (&$debts): void {
@@ -48,4 +71,7 @@ class TrackerFinance
             return ['from_user_id' => (int) $from, 'to_user_id' => (int) $to, 'amount_minor' => $amount];
         })->values()->all();
     }
+
+    private function balancesKey(Tracker $tracker): string { return "tracker:{$tracker->id}:balances:v1"; }
+    private function debtsKey(Tracker $tracker): string { return "tracker:{$tracker->id}:direct-debts:v1"; }
 }
