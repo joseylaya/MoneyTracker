@@ -34,6 +34,15 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
-    'firebase' => ['enabled' => env('FIREBASE_PUSH_ENABLED', false), 'project_id' => env('FIREBASE_PROJECT_ID'), 'service_account' => env('FIREBASE_SERVICE_ACCOUNT_PATH')],
+    'web_push' => [
+        'public_key' => env('VAPID_PUBLIC_KEY'),
+        'private_key' => env('VAPID_PRIVATE_KEY'),
+        'subject' => env('VAPID_SUBJECT', 'mailto:support@splitshare.jmgaming.site'),
+    ],
+    'firebase' => [
+        'enabled' => env('FIREBASE_PUSH_ENABLED', false),
+        'project_id' => env('FIREBASE_PROJECT_ID'),
+        'service_account' => env('FIREBASE_SERVICE_ACCOUNT_PATH'),
+    ],
 
 ];

@@ -6,17 +6,29 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import AppErrorBoundary from '@/Components/AppErrorBoundary';
+import { startForegroundPushNotifications } from './firebaseMessaging';
 
 const appName = import.meta.env.VITE_APP_NAME || 'SplitShare';
 const isLocalDevelopment = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
 
 if (isLocalDevelopment) {
     // A production service worker can retain hashed chunks between local builds.
-    // Keep localhost reliable for feature work; PWA caching remains active on HTTPS deployments.
-    navigator.serviceWorker?.getRegistrations().then((registrations) => registrations.forEach((registration) => registration.unregister()));
+    // Keep localhost reliable for feature work without removing the Firebase push worker.
+    navigator.serviceWorker?.getRegistrations().then((registrations) => registrations
+        .filter((registration) => [registration.active, registration.waiting, registration.installing]
+            .some((worker) => worker?.scriptURL.includes('/build/sw.js')))
+        .forEach((registration) => registration.unregister()));
     window.caches?.keys().then((keys) => keys.filter((key) => key.startsWith('workbox-') || key.startsWith('vite-pwa-')).forEach((key) => window.caches.delete(key)));
 } else {
-    registerSW({ immediate: true });
+    const hadController = Boolean(navigator.serviceWorker?.controller);
+    navigator.serviceWorker?.addEventListener('controllerchange', () => {
+        if (hadController && !sessionStorage.getItem('splitshare-pwa-reloaded')) {
+            sessionStorage.setItem('splitshare-pwa-reloaded', '1');
+            window.location.reload();
+        }
+    });
+    registerSW({ immediate: true, onRegisteredSW: (_workerUrl, registration) => registration?.update().catch(() => {}) });
+    startForegroundPushNotifications().catch(() => {});
 }
 
 createInertiaApp({
@@ -31,7 +43,5 @@ createInertiaApp({
 
         root.render(<AppErrorBoundary><App {...props} /></AppErrorBoundary>);
     },
-    progress: {
-        color: '#4B5563',
-    },
+    progress: false,
 });

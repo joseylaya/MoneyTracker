@@ -28,6 +28,10 @@ php artisan route:cache
 
 Serve Laravel's `public/` directory through your cloud server with HTTPS. HTTPS is required for the PWA install prompt and offline caching.
 
+## Push notifications
+
+Push notifications require a deployed HTTPS origin, matching `VITE_FIREBASE_*` values at build time, a valid Firebase service-account file at `FIREBASE_SERVICE_ACCOUNT_PATH`, and a running queue worker that consumes the `notifications` queue. Each user must enable notifications from Profile. On iPhone/iPad, Safari only permits web push from the installed Home Screen PWA. The Notifications page is the reliable inbox: it retains tracker updates even when a browser/device cannot receive push.
+
 ## Real-time tracker conversations
 
 Each tracker now has its own Messenger-style conversation, available from the **Conversation** card on its detail page. Messages are private to active tracker members, persist in the database, arrive live through Reverb, and support standard Unicode emoji plus quick emoji buttons. Owners, editors, and commenters can post; viewers can read only. Expense-detail comments remain available as contextual discussion on an individual transaction.

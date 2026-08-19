@@ -32,4 +32,6 @@ class User extends Authenticatable
     }
 
     public function trackerMemberships(): HasMany { return $this->hasMany(TrackerMember::class); }
+    public function trackerNotifications(): HasMany { return $this->hasMany(TrackerNotification::class); }
+    public function personalAccounts(): HasMany { return $this->hasMany(PersonalAccount::class); }
 }

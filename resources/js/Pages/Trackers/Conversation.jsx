@@ -39,6 +39,26 @@ export default function Conversation({ tracker, messages: initialMessages, curre
     useEffect(() => setMessages(initialMessages), [initialMessages]);
     useEffect(() => setHasMore(hasMoreMessages), [hasMoreMessages]);
     useEffect(() => {
+        const updatePresence = (active) => fetch(route('trackers.conversation.presence', tracker.id), {
+            method: 'POST', credentials: 'same-origin', keepalive: !active,
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '' },
+            body: JSON.stringify({ active }),
+        }).catch(() => {});
+        const syncVisibility = () => updatePresence(document.visibilityState === 'visible');
+
+        syncVisibility();
+        document.addEventListener('visibilitychange', syncVisibility);
+        const heartbeat = window.setInterval(() => {
+            if (document.visibilityState === 'visible') updatePresence(true);
+        }, 30000);
+
+        return () => {
+            window.clearInterval(heartbeat);
+            document.removeEventListener('visibilitychange', syncVisibility);
+            updatePresence(false);
+        };
+    }, [tracker.id]);
+    useEffect(() => {
         if (!prependingHistory.current) endOfMessages.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, [messages]);
     useEffect(() => {

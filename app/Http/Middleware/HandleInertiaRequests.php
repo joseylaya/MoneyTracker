@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use App\Models\TrackerNotification;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -37,6 +38,9 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
             ],
+            'notificationUnreadCount' => fn () => $request->user()
+                ? TrackerNotification::where('user_id', $request->user()->id)->whereNull('dismissed_at')->whereNull('read_at')->count()
+                : 0,
         ];
     }
 }

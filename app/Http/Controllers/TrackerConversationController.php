@@ -5,15 +5,17 @@ namespace App\Http\Controllers;
 use App\Events\TrackerMessageCreated;
 use App\Events\TrackerMessageReactionUpdated;
 use App\Events\TrackerSettlementRequestUpdated;
-use App\Jobs\SendPushNotification;
+use App\Services\TrackerNotifier;
 use App\Models\Settlement;
 use App\Models\Tracker;
 use App\Models\TrackerMember;
 use App\Models\TrackerMessage;
 use App\Models\TrackerMessageAttachment;
 use App\Models\TrackerSettlementRequest;
+use App\Models\TrackerNotification;
 use App\Services\TrackerFinance;
 use App\Services\TrackerCache;
+use App\Services\ConversationPresence;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -32,6 +34,12 @@ class TrackerConversationController extends Controller
         $hasMoreMessages = $messages->count() > 10;
         $messages = $messages->take(10)->sortBy('created_at')->values();
         $membership->update(['last_read_chat_at' => $messages->last()?->created_at ?? now()]);
+        // Opening the conversation acknowledges chat and settlement-conversation alerts.
+        TrackerNotification::where('user_id', $request->user()->id)
+            ->where('tracker_id', $tracker->id)
+            ->whereNull('dismissed_at')->whereNull('read_at')
+            ->whereIn('type', ['conversation.message', 'settlement.requested', 'settlement.approved', 'settlement.declined'])
+            ->update(['read_at' => now()]);
         $members = collect($cache->activeMembers($tracker))->keyBy('id');
         return Inertia::render('Trackers/Conversation', [
             'tracker' => $tracker,
@@ -51,7 +59,19 @@ class TrackerConversationController extends Controller
         return response()->json(['messages' => $messages->take(10)->sortBy('created_at')->values()->map(fn ($message) => $this->messageData($message, $request->user()->id)), 'has_more' => $messages->count() > 10]);
     }
 
-    public function store(Request $request, Tracker $tracker): RedirectResponse|JsonResponse
+    public function presence(Request $request, Tracker $tracker, ConversationPresence $presence): JsonResponse
+    {
+        abort_unless($request->user()->can('view', $tracker), 403);
+        if ($request->boolean('active')) {
+            $presence->mark($request->user()->id, $tracker);
+        } else {
+            $presence->forget($request->user()->id, $tracker);
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function store(Request $request, Tracker $tracker, TrackerNotifier $notifier): RedirectResponse|JsonResponse
     {
         abort_unless($request->user()->can('chat', $tracker), 403);
         $data = $request->validate(['body' => ['nullable', 'string', 'max:2000'], 'attachment' => ['nullable', 'file', 'max:10240', 'mimetypes:image/jpeg,image/png,image/webp,application/pdf'], 'client_message_id' => ['nullable', 'uuid']]);
@@ -65,7 +85,7 @@ class TrackerConversationController extends Controller
         })->load(['author:id,name', 'attachments']);
         TrackerMember::where('tracker_id', $tracker->id)->where('user_id', $request->user()->id)->where('status', 'active')->update(['last_read_chat_at' => $message->created_at]);
         TrackerMessageCreated::dispatch($message, $data['client_message_id'] ?? null);
-        $this->notifyMembers($tracker, $request->user()->id, 'New message in '.$tracker->name, trim($message->body) ?: 'Sent an attachment', ['tracker_id' => $tracker->id]);
+        $notifier->members($tracker, $request->user(), 'conversation.message', 'New message in '.$tracker->name, trim($message->body) ?: 'Sent an attachment', route('trackers.conversation.index', $tracker), ['message_id' => $message->id]);
         if ($request->expectsJson()) {
             return response()->json([
                 'client_message_id' => $data['client_message_id'] ?? null,
@@ -75,7 +95,7 @@ class TrackerConversationController extends Controller
         return back();
     }
 
-    public function requestSettlement(Request $request, Tracker $tracker, TrackerFinance $finance): RedirectResponse
+    public function requestSettlement(Request $request, Tracker $tracker, TrackerFinance $finance, TrackerNotifier $notifier): RedirectResponse
     {
         abort_unless($request->user()->can('chat', $tracker), 403);
         $data = $request->validate(['to_user_id' => ['required', 'integer'], 'amount' => ['required', 'regex:/^\d+(\.\d{1,2})?$/'], 'settlement_date' => ['required', 'date'], 'note' => ['nullable', 'string', 'max:1000']]);
@@ -87,11 +107,11 @@ class TrackerConversationController extends Controller
             return TrackerMessage::create(['tracker_id' => $tracker->id, 'user_id' => $request->user()->id, 'body' => '', 'type' => 'settlement_request', 'settlement_request_id' => $settlementRequest->id]);
         })->load(['author:id,name', 'attachments', 'settlementRequest.fromUser:id,name', 'settlementRequest.toUser:id,name']);
         TrackerMessageCreated::dispatch($message);
-        SendPushNotification::dispatch($message->settlementRequest->to_user_id, 'Settlement approval requested', $request->user()->name.' requested approval for a settlement in '.$tracker->name, ['tracker_id' => $tracker->id]);
+        $notifier->user($message->settlementRequest->to_user_id, $tracker, $request->user()->id, 'settlement.requested', 'Settlement approval requested', $request->user()->name.' requested approval for a settlement in '.$tracker->name, route('trackers.conversation.index', $tracker));
         return back();
     }
 
-    public function respondToSettlement(Request $request, Tracker $tracker, TrackerSettlementRequest $settlementRequest, TrackerFinance $finance): RedirectResponse
+    public function respondToSettlement(Request $request, Tracker $tracker, TrackerSettlementRequest $settlementRequest, TrackerFinance $finance, TrackerNotifier $notifier): RedirectResponse
     {
         abort_unless($settlementRequest->tracker_id === $tracker->id && $settlementRequest->status === 'pending' && $settlementRequest->to_user_id === $request->user()->id, 403);
         $data = $request->validate(['decision' => ['required', 'in:approved,declined']]);
@@ -104,7 +124,7 @@ class TrackerConversationController extends Controller
         });
         $finance->forget($tracker);
         TrackerSettlementRequestUpdated::dispatch($settlementRequest->fresh());
-        SendPushNotification::dispatch($settlementRequest->from_user_id, 'Settlement '.$settlementRequest->status, $request->user()->name.' '.$settlementRequest->status.' your settlement request in '.$tracker->name, ['tracker_id' => $tracker->id]);
+        $notifier->user($settlementRequest->from_user_id, $tracker, $request->user()->id, 'settlement.'.$settlementRequest->status, 'Settlement '.$settlementRequest->status, $request->user()->name.' '.$settlementRequest->status.' your settlement request in '.$tracker->name, route('trackers.conversation.index', $tracker));
         return back();
     }
 
@@ -132,5 +152,4 @@ class TrackerConversationController extends Controller
 
     private function minor(string $amount): int { [$whole, $fraction] = array_pad(explode('.', $amount, 2), 2, ''); return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0'); }
     private function messageQuery(Tracker $tracker) { return $tracker->messages()->with(['author:id,name', 'reactions:id,tracker_message_id,user_id,emoji', 'attachments', 'settlementRequest.fromUser:id,name', 'settlementRequest.toUser:id,name']); }
-    private function notifyMembers(Tracker $tracker, int $exceptUserId, string $title, string $body, array $data): void { $tracker->members()->where('status','active')->where('user_id','!=',$exceptUserId)->pluck('user_id')->each(fn ($userId) => SendPushNotification::dispatch($userId, $title, $body, $data)); }
 }

@@ -19,4 +19,5 @@ class Tracker extends Model
     public function invitations(): HasMany { return $this->hasMany(TrackerInvitation::class); }
     public function messages(): HasMany { return $this->hasMany(TrackerMessage::class); }
     public function settlementRequests(): HasMany { return $this->hasMany(TrackerSettlementRequest::class); }
+    public function notifications(): HasMany { return $this->hasMany(TrackerNotification::class); }
 }

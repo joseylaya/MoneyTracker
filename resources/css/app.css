@@ -3,31 +3,52 @@
 @tailwind utilities;
 
 @layer base {
-    html { -webkit-tap-highlight-color: transparent; font-family: Inter, ui-sans-serif, system-ui, sans-serif; scroll-behavior: smooth; overscroll-behavior: none; }
-    body { @apply bg-slate-100 text-slate-900 antialiased; min-height: 100dvh; overscroll-behavior-y: none; }
+    html { -webkit-tap-highlight-color: transparent; font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; scroll-behavior: smooth; overscroll-behavior: none; }
+    body { @apply bg-slate-100 text-slate-900 antialiased; min-height: 100dvh; overscroll-behavior-y: none; font-variant-numeric: tabular-nums; }
+    b, strong { font-weight: 600; }
     button, a, input, select, textarea { touch-action: pan-x pan-y; -webkit-touch-callout: none; }
     button, a { -webkit-user-select: none; user-select: none; }
-    input, textarea { font-size: 16px; }
+    input, textarea { font-size: 16px; font-weight: 400; }
 }
 
 @layer components {
-    .font-display { font-family: "Trebuchet MS", Inter, ui-sans-serif, system-ui, sans-serif; }
+    .font-display { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-weight: 700; letter-spacing: -.015em; }
+    .text-page-title { @apply font-display text-2xl font-bold leading-tight; }
+    .text-section-title { @apply text-xl font-semibold leading-snug; }
+    .text-card-title { @apply text-base font-semibold leading-snug; }
+    .text-body { @apply text-base font-normal leading-6; }
+    .text-meta { @apply text-sm font-normal leading-5 text-slate-500; }
+    .text-money-xl { @apply font-display text-4xl font-bold tracking-tight; font-variant-numeric: tabular-nums; }
+    .text-money-lg { @apply font-display text-2xl font-bold tracking-tight; font-variant-numeric: tabular-nums; }
+    .text-money-sm { @apply font-semibold; font-variant-numeric: tabular-nums; }
+    .ss-summary-panel { @apply rounded-[2rem] p-6 shadow-[0_12px_28px_rgba(15,23,42,.10)]; }
+    .ss-list-item { @apply rounded-2xl bg-slate-50 px-4 py-3; }
+    .ss-inline-action { @apply text-sm font-semibold text-[#18a956] transition hover:text-[#0d7a3c]; }
     .page-wrap { @apply mx-auto max-w-5xl px-5 py-6 sm:px-8; animation: ss-page-in 240ms cubic-bezier(.2,.8,.2,1) both; }
-    .eyebrow { @apply text-xs font-bold uppercase tracking-[.14em] text-slate-500; }
+    .eyebrow { @apply text-xs font-semibold uppercase tracking-[.14em] text-slate-500; }
     .ss-card { @apply rounded-[1.65rem] border border-slate-200/90 bg-white shadow-[0_3px_10px_rgba(15,23,42,.035)]; transition: transform 180ms cubic-bezier(.2,.8,.2,1), box-shadow 180ms ease, border-color 180ms ease; }
     .ss-card:has(a:hover) { @apply border-[#c5f0d5]; box-shadow: 0 12px 26px rgba(15, 23, 42, .07); }
     .ss-input { @apply block h-14 w-full rounded-2xl border-0 bg-[#f5f7f8] px-4 text-base text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-[#2ecc70]; transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
     .ss-input:focus { @apply bg-white; }
-    .ss-button { @apply inline-flex h-[3.25rem] items-center justify-center rounded-2xl bg-[#2ecc70] px-5 text-sm font-bold text-white shadow-[0_10px_20px_rgba(46,204,112,.20)] transition hover:brightness-95 disabled:opacity-50; transition-duration: 180ms; }
+    .ss-button { @apply inline-flex h-[3.25rem] items-center justify-center rounded-2xl bg-[#2ecc70] px-5 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(46,204,112,.20)] transition hover:brightness-95 disabled:opacity-50; transition-duration: 180ms; }
     .ss-button:active, .ss-button-secondary:active { transform: scale(.97); }
-    .ss-button-secondary { @apply inline-flex h-[3.25rem] items-center justify-center rounded-2xl border border-[#b9f0cf] bg-[#eafaf0] px-5 text-sm font-bold text-[#13af59] transition hover:bg-[#dff8e9]; transition-duration: 180ms; }
-    .role-badge { @apply inline-flex rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider; }
+    .ss-button-secondary { @apply inline-flex h-[3.25rem] items-center justify-center rounded-2xl border border-[#b9f0cf] bg-[#eafaf0] px-5 text-sm font-semibold text-[#13af59] transition hover:bg-[#dff8e9]; transition-duration: 180ms; }
+    .role-badge { @apply inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider; }
     .mobile-sheet { @apply fixed inset-0 z-50 flex items-end bg-slate-950/35 p-0 sm:items-center sm:justify-center sm:p-6; }
     .mobile-sheet > div { @apply max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl sm:max-w-xl sm:rounded-3xl; padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
     .ss-page-transition { animation: ss-page-in 240ms cubic-bezier(.2,.8,.2,1) both; }
+    .ss-page-motion { animation: ss-page-slide-forward 260ms cubic-bezier(.2,.8,.2,1) both; }
+    .ss-page-motion-backward { animation-name: ss-page-slide-backward; }
+    .ss-page-motion.is-loading { animation: ss-page-fade 150ms ease both; }
+    .ss-skeleton { @apply rounded-full bg-slate-200/80; animation: ss-skeleton-pulse 1.25s ease-in-out infinite; }
 }
 
+
 @keyframes ss-page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ss-page-slide-forward { from { opacity: .35; transform: translateX(22px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ss-page-slide-backward { from { opacity: .35; transform: translateX(-22px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ss-page-fade { from { opacity: .4; } to { opacity: 1; } }
+@keyframes ss-skeleton-pulse { 0%, 100% { opacity: .52; } 50% { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }

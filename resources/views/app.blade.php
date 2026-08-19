@@ -8,11 +8,11 @@
         <title inertia>{{ config('app.name', 'SplitShare') }}</title>
         <meta name="theme-color" content="#0f766e">
         <link rel="manifest" href="{{ asset('build/manifest.webmanifest') }}">
-        <link rel="apple-touch-icon" href="{{ asset('icons/splitshare.svg') }}">
+        <link rel="apple-touch-icon" href="{{ asset('icons/splitshare-180.png') }}">
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
+        <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700,800&display=swap" rel="stylesheet" />
 
         <!-- Scripts -->
         @routes

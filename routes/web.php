@@ -6,6 +6,9 @@ use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\ExpenseCommentController;
 use App\Http\Controllers\TrackerConversationController;
 use App\Http\Controllers\PushDeviceController;
+use App\Http\Controllers\TrackerNotificationController;
+use App\Http\Controllers\FirebaseMessagingServiceWorkerController;
+use App\Http\Controllers\PersonalFinanceController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -19,7 +22,7 @@ Route::get('/', function () {
         'canRegister' => Route::has('register'),
     ]);
 });
-
+Route::get('/firebase-messaging-sw.js', FirebaseMessagingServiceWorkerController::class)->name('firebase-messaging-sw');
 Route::get('/dashboard', function () {
     return redirect()->route('trackers.index');
 })->middleware(['auth', 'verified'])->name('dashboard');
@@ -27,14 +30,37 @@ Route::get('/dashboard', function () {
 Route::middleware('auth')->group(function () {
     Route::post('/push-devices', [PushDeviceController::class, 'store'])->name('push-devices.store');
     Route::delete('/push-devices', [PushDeviceController::class, 'destroy'])->name('push-devices.destroy');
-    Route::get('/home', [TrackerController::class, 'index'])->name('home');
+    Route::get('/notifications', [TrackerNotificationController::class, 'index'])->name('notifications.index');
+    Route::patch('/notifications/read-all', [TrackerNotificationController::class, 'readAll'])->name('notifications.read-all');
+    Route::patch('/notifications/{notification}/group/read', [TrackerNotificationController::class, 'readGroup'])->name('notifications.group.read');
+    Route::patch('/notifications/{notification}/read', [TrackerNotificationController::class, 'read'])->name('notifications.read');
+    Route::delete('/notifications/{notification}/group', [TrackerNotificationController::class, 'dismissGroup'])->name('notifications.group.dismiss');
+    Route::delete('/notifications/{notification}', [TrackerNotificationController::class, 'dismiss'])->name('notifications.dismiss');
+    Route::get('/home', [PersonalFinanceController::class, 'index'])->name('home');
+    Route::get('/personal/accounts', [PersonalFinanceController::class, 'accounts'])->name('personal.accounts');
+    Route::post('/personal/accounts', [PersonalFinanceController::class, 'storeAccount'])->name('personal.accounts.store');
+    Route::patch('/personal/accounts/{account}', [PersonalFinanceController::class, 'updateAccount'])->name('personal.accounts.update');
+    Route::delete('/personal/accounts/{account}', [PersonalFinanceController::class, 'destroyAccount'])->name('personal.accounts.destroy');
+    Route::post('/personal/income', [PersonalFinanceController::class, 'storeIncome'])->name('personal.income.store');
+    Route::post('/personal/expenses', [PersonalFinanceController::class, 'storeExpense'])->name('personal.expenses.store');
+    Route::post('/personal/transfers', [PersonalFinanceController::class, 'transfer'])->name('personal.transfers.store');
+    Route::post('/personal/commitments', [PersonalFinanceController::class, 'storeCommitment'])->name('personal.commitments.store');
+    Route::post('/personal/commitments/{commitment}/pay', [PersonalFinanceController::class, 'payCommitment'])->name('personal.commitments.pay');
+    Route::patch('/personal/commitments/{commitment}', [PersonalFinanceController::class, 'updateCommitment'])->name('personal.commitments.update');
+    Route::delete('/personal/commitments/{commitment}', [PersonalFinanceController::class, 'destroyCommitment'])->name('personal.commitments.destroy');
+    Route::patch('/personal/settings', [PersonalFinanceController::class, 'saveSettings'])->name('personal.settings.update');
+    Route::put('/personal/buckets', [PersonalFinanceController::class, 'saveBucket'])->name('personal.buckets.save');
+    Route::delete('/personal/buckets/{bucket}', [PersonalFinanceController::class, 'destroyBucket'])->name('personal.buckets.destroy');
+    Route::post('/personal/reconciliations', [PersonalFinanceController::class, 'reconcile'])->name('personal.reconciliations.store');
     Route::get('/trackers', [TrackerController::class, 'index'])->name('trackers.index');
     Route::get('/trackers/create', [TrackerController::class, 'create'])->name('trackers.create');
     Route::post('/trackers', [TrackerController::class, 'store'])->name('trackers.store');
     Route::get('/trackers/{tracker}', [TrackerController::class, 'show'])->name('trackers.show');
     Route::get('/trackers/{tracker}/members', [TrackerController::class, 'members'])->name('trackers.members.index');
+    Route::get('/trackers/{tracker}/members/suggestions', [TrackerController::class, 'memberSuggestions'])->name('trackers.members.suggestions');
     Route::get('/trackers/{tracker}/conversation', [TrackerConversationController::class, 'index'])->name('trackers.conversation.index');
     Route::get('/trackers/{tracker}/conversation/messages/older', [TrackerConversationController::class, 'older'])->name('trackers.conversation.messages.older');
+    Route::post('/trackers/{tracker}/conversation/presence', [TrackerConversationController::class, 'presence'])->name('trackers.conversation.presence');
     Route::post('/trackers/{tracker}/conversation', [TrackerConversationController::class, 'store'])->name('trackers.conversation.store');
     Route::post('/trackers/{tracker}/conversation/{message}/reactions', [TrackerConversationController::class, 'react'])->name('trackers.conversation.reactions.store');
     Route::post('/trackers/{tracker}/conversation/settlements', [TrackerConversationController::class, 'requestSettlement'])->name('trackers.conversation.settlements.store');

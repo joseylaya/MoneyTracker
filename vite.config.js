@@ -15,6 +15,9 @@ export default defineConfig({
         react(),
         VitePWA({
             registerType: 'autoUpdate',
+            strategies: 'injectManifest',
+            srcDir: 'resources/js',
+            filename: 'service-worker.js',
             manifest: {
                 name: 'SplitShare',
                 short_name: 'SplitShare',
@@ -25,9 +28,15 @@ export default defineConfig({
                 start_url: basePath,
                 icons: [
                     {
-                        src: `${basePath}icons/splitshare.svg`,
-                        sizes: 'any',
-                        type: 'image/svg+xml',
+                        src: `${basePath}icons/splitshare-192.png`,
+                        sizes: '192x192',
+                        type: 'image/png',
+                        purpose: 'any maskable',
+                    },
+                    {
+                        src: `${basePath}icons/splitshare-512.png`,
+                        sizes: '512x512',
+                        type: 'image/png',
                         purpose: 'any maskable',
                     },
                 ],

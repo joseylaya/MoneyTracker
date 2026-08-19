@@ -15,8 +15,10 @@ export default function Register() {
 
     const submit = (e) => {
         e.preventDefault();
+        sessionStorage.setItem('splitshare:pwa-install-guide-after-auth', '1');
 
         post(route('register'), {
+            onError: () => sessionStorage.removeItem('splitshare:pwa-install-guide-after-auth'),
             onFinish: () => reset('password', 'password_confirmation'),
         });
     };

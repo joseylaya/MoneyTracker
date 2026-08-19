@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
-import { LogOut } from 'lucide-react';
+import { Landmark, LogOut } from 'lucide-react';
 import DeleteUserForm from './Partials/DeleteUserForm';
 import UpdatePasswordForm from './Partials/UpdatePasswordForm';
 import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm';
@@ -29,6 +29,11 @@ export default function Edit({ mustVerifyEmail, status }) {
                         <UpdatePasswordForm className="max-w-xl" />
                     </div>
                     <PushNotifications />
+
+                    <div className="ss-card flex flex-wrap items-center justify-between gap-4 p-6 sm:p-7">
+                        <div><h2 className="font-display text-xl font-bold">Personal accounts</h2><p className="mt-1 text-sm text-slate-500">Add and manage your bank accounts, e-wallets, and cash balances.</p></div>
+                        <Link href={route('personal.accounts')} className="ss-button h-11 gap-2 px-4"><Landmark size={18}/>Manage accounts</Link>
+                    </div>
 
                     <div className="ss-card flex flex-wrap items-center justify-between gap-4 p-6 sm:p-7">
                         <div><h2 className="font-display text-xl font-bold">Signed in on this device</h2><p className="mt-1 text-sm text-slate-500">End this session securely when you are finished.</p></div>

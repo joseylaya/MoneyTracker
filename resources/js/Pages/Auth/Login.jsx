@@ -11,8 +11,10 @@ export default function Login({ status, canResetPassword }) {
 
     const submit = (e) => {
         e.preventDefault();
+        sessionStorage.setItem('splitshare:pwa-install-guide-after-auth', '1');
 
         post(route('login'), {
+            onError: () => sessionStorage.removeItem('splitshare:pwa-install-guide-after-auth'),
             onFinish: () => reset('password'),
         });
     };

@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, MessageCircle, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 const category = ['🍴', '🛒', '⛽', '🎬'];
-export default function Show({ tracker, membership, members, expenses, debts, currentUserId, unreadMessagesCount }) {
+export default function Show({ tracker, membership, members, expenses, debts, currentUserId, unreadMessagesCount, unreadNotificationsCount }) {
     const [tab, setTab] = useState('transactions'); const { flash } = usePage().props;
     const [unreadMessages, setUnreadMessages] = useState(unreadMessagesCount);
     const ownBalance = members.find((member) => member.id === currentUserId)?.balance_minor || 0;
@@ -27,7 +27,7 @@ export default function Show({ tracker, membership, members, expenses, debts, cu
             <BalanceCard balance={ownBalance} currency={tracker.currency_code} settlementHref={route('trackers.settlements.create', tracker.id)} />
             <Link href={route('trackers.conversation.index', tracker.id)} className="mt-4 flex items-center gap-4 rounded-[1.45rem] border border-[#c8f1d8] bg-white px-5 py-4 shadow-[0_3px_10px_rgba(15,23,42,.035)] transition hover:border-[#8ce4af] hover:bg-[#f9fffb]">
                 <span className="relative flex size-11 items-center justify-center rounded-2xl bg-[#e8faef] text-[#16b85b]"><MessageCircle size={21}/>{unreadMessages > 0 && <span className="absolute -right-2 -top-2 flex min-w-5 items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1 text-[10px] font-bold leading-5 text-white" aria-label={`${unreadMessages} unread messages`}>{unreadMessages > 99 ? '99+' : unreadMessages}</span>}</span>
-                <span className="min-w-0 flex-1"><span className="block font-display text-lg font-bold text-slate-900">Conversation</span><span className="mt-0.5 block truncate text-sm text-slate-500">Message everyone in this tracker</span></span>
+                <span className="min-w-0 flex-1"><span className="block font-display text-lg font-bold text-slate-900">Conversation</span><span className="mt-0.5 block truncate text-sm text-slate-500">Message everyone in this tracker{unreadNotificationsCount > 0 ? ` · ${unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount} new updates` : ''}</span></span>
                 <span className="flex items-center gap-2"><span className="text-xs font-bold text-rose-500">{unreadMessages > 0 ? `${unreadMessages > 99 ? '99+' : unreadMessages} new` : ''}</span><ChevronRight size={20} className="shrink-0 text-[#26bf67]"/></span>
             </Link>
             <div className="mt-7 flex border-b border-slate-200"><button onClick={() => setTab('transactions')} className={`flex-1 border-b-2 px-3 py-4 text-xs font-bold uppercase tracking-[.14em] ${tab === 'transactions' ? 'border-[#2ecc70] text-[#16b85b]' : 'border-transparent text-slate-400'}`}>Transactions</button><button onClick={() => setTab('balances')} className={`flex-1 border-b-2 px-3 py-4 text-xs font-bold uppercase tracking-[.14em] ${tab === 'balances' ? 'border-[#2ecc70] text-[#16b85b]' : 'border-transparent text-slate-400'}`}>Balances</button></div>

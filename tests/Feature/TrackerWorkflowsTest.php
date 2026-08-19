@@ -46,6 +46,18 @@ class TrackerWorkflowsTest extends TestCase
         $this->assertDatabaseHas('tracker_invitations', ['tracker_id' => $tracker->id, 'email' => 'future@example.com', 'role' => 'viewer', 'status' => 'pending']);
     }
 
+    public function test_member_suggestions_match_registered_users_and_exclude_existing_members(): void
+    {
+        $owner = User::factory()->create();
+        $candidate = User::factory()->create(['name' => 'Maria Cruz', 'email' => 'maria@example.com']);
+        $existing = User::factory()->create(['name' => 'Maria Existing', 'email' => 'existing@example.com']);
+        $tracker = $this->tracker($owner);
+        TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $existing->id, 'role' => 'viewer', 'status' => 'active', 'joined_at' => now(), 'created_by' => $owner->id]);
+
+        $this->actingAs($owner)->getJson(route('trackers.members.suggestions', ['tracker' => $tracker, 'query' => 'maria']))
+            ->assertOk()->assertJsonPath('suggestions.0.email', $candidate->email)->assertJsonCount(1, 'suggestions');
+    }
+
     public function test_settlement_cannot_exceed_current_direct_debt(): void
     {
         $owner = User::factory()->create(); $member = User::factory()->create(); $tracker = $this->tracker($owner);
