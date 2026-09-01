@@ -9,7 +9,7 @@ return new class extends Migration {
     {
         Schema::table('users', function (Blueprint $table) {
             $table->boolean('is_placeholder')->default(false)->after('remember_token');
-            $table->foreignId('placeholder_tracker_id')->nullable()->after('is_placeholder')->constrained('trackers')->nullOnDelete();
+            $table->foreignUuid('placeholder_tracker_id')->nullable()->after('is_placeholder')->constrained('trackers')->nullOnDelete();
         });
     }
 
