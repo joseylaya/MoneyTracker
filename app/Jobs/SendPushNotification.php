@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\User;
-use App\Services\FirebasePush;
+use App\Services\WebPushService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
@@ -26,7 +26,7 @@ class SendPushNotification implements ShouldQueue
         $this->onQueue('notifications')->afterCommit();
     }
 
-    public function handle(FirebasePush $push): void
+    public function handle(WebPushService $push): void
     {
         $user = User::find($this->userId);
 

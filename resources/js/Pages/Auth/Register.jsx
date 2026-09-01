@@ -1,122 +1,13 @@
 import InputError from '@/Components/InputError';
-import InputLabel from '@/Components/InputLabel';
-import PrimaryButton from '@/Components/PrimaryButton';
-import TextInput from '@/Components/TextInput';
 import GuestLayout from '@/Layouts/GuestLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState } from 'react';
 
 export default function Register() {
-    const { data, setData, post, processing, errors, reset } = useForm({
-        name: '',
-        email: '',
-        password: '',
-        password_confirmation: '',
-    });
-
-    const submit = (e) => {
-        e.preventDefault();
-        sessionStorage.setItem('splitshare:pwa-install-guide-after-auth', '1');
-
-        post(route('register'), {
-            onError: () => sessionStorage.removeItem('splitshare:pwa-install-guide-after-auth'),
-            onFinish: () => reset('password', 'password_confirmation'),
-        });
-    };
-
-    return (
-        <GuestLayout>
-            <Head title="Register" />
-
-            <form onSubmit={submit}>
-                <div>
-                    <InputLabel htmlFor="name" value="Name" />
-
-                    <TextInput
-                        id="name"
-                        name="name"
-                        value={data.name}
-                        className="mt-1 block w-full"
-                        autoComplete="name"
-                        isFocused={true}
-                        onChange={(e) => setData('name', e.target.value)}
-                        required
-                    />
-
-                    <InputError message={errors.name} className="mt-2" />
-                </div>
-
-                <div className="mt-4">
-                    <InputLabel htmlFor="email" value="Email" />
-
-                    <TextInput
-                        id="email"
-                        type="email"
-                        name="email"
-                        value={data.email}
-                        className="mt-1 block w-full"
-                        autoComplete="username"
-                        onChange={(e) => setData('email', e.target.value)}
-                        required
-                    />
-
-                    <InputError message={errors.email} className="mt-2" />
-                </div>
-
-                <div className="mt-4">
-                    <InputLabel htmlFor="password" value="Password" />
-
-                    <TextInput
-                        id="password"
-                        type="password"
-                        name="password"
-                        value={data.password}
-                        className="mt-1 block w-full"
-                        autoComplete="new-password"
-                        onChange={(e) => setData('password', e.target.value)}
-                        required
-                    />
-
-                    <InputError message={errors.password} className="mt-2" />
-                </div>
-
-                <div className="mt-4">
-                    <InputLabel
-                        htmlFor="password_confirmation"
-                        value="Confirm Password"
-                    />
-
-                    <TextInput
-                        id="password_confirmation"
-                        type="password"
-                        name="password_confirmation"
-                        value={data.password_confirmation}
-                        className="mt-1 block w-full"
-                        autoComplete="new-password"
-                        onChange={(e) =>
-                            setData('password_confirmation', e.target.value)
-                        }
-                        required
-                    />
-
-                    <InputError
-                        message={errors.password_confirmation}
-                        className="mt-2"
-                    />
-                </div>
-
-                <div className="mt-4 flex items-center justify-end">
-                    <Link
-                        href={route('login')}
-                        className="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                    >
-                        Already registered?
-                    </Link>
-
-                    <PrimaryButton className="ms-4" disabled={processing}>
-                        Register
-                    </PrimaryButton>
-                </div>
-            </form>
-        </GuestLayout>
-    );
+    const [step, setStep] = useState(1);
+    const { data, setData, post, processing, errors, reset } = useForm({ username:'', password:'', password_confirmation:'', email:'' });
+    const next = () => setStep((current) => Math.min(4, current + 1));
+    const submit = (event) => { event.preventDefault(); sessionStorage.setItem('splitshare:pwa-install-guide-after-auth','1'); sessionStorage.setItem('splitshare:push-onboarding-after-login','1'); post(route('register'), { onError:(validation)=>setStep(validation.username?1:validation.password?2:validation.password_confirmation?3:4), onFinish:()=>reset('password','password_confirmation') }); };
+    return <GuestLayout><Head title="Create account"/><div className="mb-7 flex items-center gap-3">{step>1&&<button type="button" onClick={()=>setStep(step-1)} className="flex size-9 items-center justify-center rounded-full bg-slate-100"><ChevronLeft size={19}/></button>}<div className="flex-1"><p className="text-xs font-bold uppercase tracking-widest text-[#1bb85b]">Step {step} of 4</p><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-[#2ecc70] transition-all" style={{width:`${step/4*100}%`}}/></div></div></div><form onSubmit={submit}>{step===1&&<section><h1 className="font-display text-3xl font-bold">What should we call you?</h1><p className="mt-2 text-sm text-slate-500">This nickname is also your login username.</p><label className="mt-7 block text-sm font-bold">Nickname / username</label><input autoFocus value={data.username} onChange={(e)=>setData('username',e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,''))} className="ss-input mt-2" placeholder="e.g. jose_marie" autoComplete="username"/><InputError message={errors.username} className="mt-2"/><button type="button" onClick={next} disabled={data.username.length<3} className="ss-button mt-7 w-full">Continue <ChevronRight size={19}/></button></section>}{step===2&&<section><h1 className="font-display text-3xl font-bold">Create your password</h1><p className="mt-2 text-sm text-slate-500">Use at least 8 characters.</p><label className="mt-7 block text-sm font-bold">Password</label><input autoFocus type="password" value={data.password} onChange={(e)=>setData('password',e.target.value)} className="ss-input mt-2" autoComplete="new-password"/><InputError message={errors.password} className="mt-2"/><button type="button" onClick={next} disabled={data.password.length<8} className="ss-button mt-7 w-full">Continue <ChevronRight size={19}/></button></section>}{step===3&&<section><h1 className="font-display text-3xl font-bold">Confirm your password</h1><p className="mt-2 text-sm text-slate-500">Enter the same password one more time.</p><label className="mt-7 block text-sm font-bold">Confirm password</label><input autoFocus type="password" value={data.password_confirmation} onChange={(e)=>setData('password_confirmation',e.target.value)} className="ss-input mt-2" autoComplete="new-password"/><InputError message={errors.password_confirmation} className="mt-2"/>{data.password_confirmation&&data.password!==data.password_confirmation&&<p className="mt-2 text-sm text-rose-600">Passwords do not match.</p>}<button type="button" onClick={next} disabled={!data.password_confirmation||data.password!==data.password_confirmation} className="ss-button mt-7 w-full">Continue <ChevronRight size={19}/></button></section>}{step===4&&<section><h1 className="font-display text-3xl font-bold">Add an email?</h1><p className="mt-2 text-sm leading-6 text-slate-500">Optional for shared trackers. You’ll need one later for Personal Finance and account recovery.</p><label className="mt-7 block text-sm font-bold">Email <span className="font-normal text-slate-400">(optional)</span></label><input autoFocus type="email" value={data.email} onChange={(e)=>setData('email',e.target.value)} className="ss-input mt-2" placeholder="you@example.com" autoComplete="email"/><InputError message={errors.email} className="mt-2"/><button disabled={processing} className="ss-button mt-7 w-full">{processing?'Creating account…':data.email?'Create account':'Skip and create account'}</button></section>}</form><p className="mt-7 text-center text-sm text-slate-500">Already have an account? <Link href={route('login')} className="font-bold text-[#18ad58]">Log in</Link></p></GuestLayout>;
 }

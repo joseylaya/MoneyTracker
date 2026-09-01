@@ -1,7 +1,13 @@
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import { clientsClaim } from 'workbox-core';
 
+// Take control as soon as a new release is installed so an old shell cannot
+// keep requesting JavaScript chunks that no longer exist after deployment.
+self.skipWaiting();
+clientsClaim();
 cleanupOutdatedCaches();
-precacheAndRoute(self.__WB_MANIFEST);
+const precacheManifest = self.__WB_MANIFEST;
+precacheAndRoute(precacheManifest);
 
 self.addEventListener('push', (event) => {
     const payload = event.data?.json?.() || {};
@@ -23,8 +29,16 @@ self.addEventListener('notificationclick', (event) => {
     event.notification.close();
     const destination = new URL(event.notification.data?.url || '/', self.location.origin).href;
 
-    event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
-        const existing = windows.find((client) => client.url === destination);
-        return existing ? existing.focus() : clients.openWindow(destination);
+    event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
+        const existing = windows.find((client) => new URL(client.url).origin === self.location.origin);
+        if (!existing) return clients.openWindow(destination);
+
+        try {
+            await existing.navigate(destination);
+        } catch {
+            return clients.openWindow(destination);
+        }
+
+        return existing.focus();
     }));
 });

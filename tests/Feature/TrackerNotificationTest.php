@@ -10,6 +10,7 @@ use App\Models\TrackerNotification;
 use App\Models\User;
 use App\Services\TrackerNotifier;
 use App\Services\ConversationPresence;
+use App\Services\WebPushService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
@@ -37,6 +38,20 @@ class TrackerNotificationTest extends TestCase
         $this->assertDatabaseMissing('tracker_notifications', ['user_id' => $owner->id, 'tracker_id' => $tracker->id]);
         Queue::assertPushed(SendPushNotification::class, fn ($job) => $job->userId === $member->id && $job->data['tracker_id'] === $tracker->id);
         Event::assertDispatched(TrackerNotificationCreated::class, fn ($event) => $event->notification->user_id === $member->id && $event->badgeCount === 1);
+    }
+
+    public function test_queued_push_job_uses_the_unified_web_push_service(): void
+    {
+        $user = User::factory()->create();
+        $push = \Mockery::mock(WebPushService::class);
+        $push->shouldReceive('send')->once()->with(
+            \Mockery::on(fn (User $recipient) => $recipient->is($user)),
+            'New message',
+            'Dinner is at 7 PM.',
+            ['url' => '/trackers/example'],
+        );
+
+        (new SendPushNotification($user->id, 'New message', 'Dinner is at 7 PM.', ['url' => '/trackers/example']))->handle($push);
     }
 
     public function test_only_the_owner_can_read_or_dismiss_a_notification(): void

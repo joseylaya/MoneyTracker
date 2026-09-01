@@ -4,12 +4,12 @@ import './bootstrap';
 import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import AppErrorBoundary from '@/Components/AppErrorBoundary';
-import { startForegroundPushNotifications } from './firebaseMessaging';
+import { registerSW } from 'virtual:pwa-register';
 
 const appName = import.meta.env.VITE_APP_NAME || 'SplitShare';
 const isLocalDevelopment = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+document.documentElement.dataset.splitshareBuild = '20260819-overflow';
 
 if (isLocalDevelopment) {
     // A production service worker can retain hashed chunks between local builds.
@@ -28,7 +28,6 @@ if (isLocalDevelopment) {
         }
     });
     registerSW({ immediate: true, onRegisteredSW: (_workerUrl, registration) => registration?.update().catch(() => {}) });
-    startForegroundPushNotifications().catch(() => {});
 }
 
 createInertiaApp({

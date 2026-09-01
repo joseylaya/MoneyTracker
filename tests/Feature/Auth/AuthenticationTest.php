@@ -22,12 +22,27 @@ class AuthenticationTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->post('/login', [
-            'email' => $user->email,
+            'login' => $user->email,
             'password' => 'password',
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
+        $response->assertRedirect(route('trackers.index'));
+    }
+
+    public function test_users_can_authenticate_with_their_nickname(): void
+    {
+        $user = User::factory()->create(['username' => 'travel_buddy']);
+        $this->post('/login', ['login' => 'travel_buddy', 'password' => 'password'])->assertRedirect(route('trackers.index'));
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_stale_protected_destination_is_not_reused_after_login(): void
+    {
+        $user = User::factory()->create();
+        $this->withSession(['url.intended' => url('/trackers/not-my-tracker')])
+            ->post('/login', ['login' => $user->email, 'password' => 'password'])
+            ->assertRedirect(route('trackers.index'));
     }
 
     public function test_users_can_not_authenticate_with_invalid_password(): void
@@ -35,7 +50,7 @@ class AuthenticationTest extends TestCase
         $user = User::factory()->create();
 
         $this->post('/login', [
-            'email' => $user->email,
+            'login' => $user->username,
             'password' => 'wrong-password',
         ]);
 

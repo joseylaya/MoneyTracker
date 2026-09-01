@@ -90,12 +90,12 @@ function ExpenseForm({ accounts, onClose }) {
     </form>;
 }
 
-export default function Home({ settings, accounts, liquid, reservedBills, savings, emergency, safe, lifestyle, lifestyleBudget, upcomingCommitments, nextPayday, days, recentTransactions }) {
+export default function Home({ settings, accounts, liquid, reservedBills, billShortfall, savings, emergency, safe, lifestyle, lifestyleBudget, lifestyleAvailable, upcomingCommitments, nextPayday, days, recentTransactions }) {
     const [recordingIncome, setRecordingIncome] = useState(false);
     const [recordingExpense, setRecordingExpense] = useState(false);
     const [payingBill, setPayingBill] = useState(null);
     const currency = settings.currency_code;
-    const lifestyleRemaining = Math.max(0, lifestyleBudget - lifestyle);
+    const lifestyleRemaining = lifestyleAvailable;
     const recentActivity = recentTransactions.slice(0, 8);
 
     return <AuthenticatedLayout header={<div><p className="eyebrow">Personal Finance</p><h1 className="font-display text-2xl font-bold">Your money, clearly.</h1></div>} floatingAction={<button onClick={() => { setRecordingExpense(true); setRecordingIncome(false); }} disabled={!accounts.length || recordingExpense} className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-5 z-50 flex size-14 items-center justify-center rounded-full bg-[#18b957] text-white shadow-lg shadow-emerald-900/25 transition hover:bg-[#149d49] disabled:opacity-50 sm:right-8" aria-label="Add expense" title="Add expense"><Plus size={24} /></button>}>
@@ -103,7 +103,7 @@ export default function Home({ settings, accounts, liquid, reservedBills, saving
         <div className="page-wrap space-y-6 pb-10">
             <section className="ss-summary-panel border-2 border-[#2ecc70] bg-[#effcf4]">
                 <div className="flex items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-wider text-[#0d9b4c]">Safe to spend</p><p className="mt-2 text-money-xl text-[#0d9b4c]">{money(safe, currency)}</p><p className="mt-2 text-sm text-slate-600">{money(Math.floor(safe / days), currency)} per day until payday · {new Date(nextPayday).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</p></div><button onClick={() => { setRecordingIncome(true); setRecordingExpense(false); }} disabled={!accounts.length || recordingIncome} className="ss-button h-10 shrink-0 rounded-xl px-3"><Plus className="mr-1 inline" size={16} /> Income</button></div>
-                <div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div className="rounded-2xl border border-[#c5f0d5] bg-white p-3"><span className="block text-slate-500">Liquid money</span><b className="text-money-sm">{money(liquid, currency)}</b></div><div className="rounded-2xl border border-[#c5f0d5] bg-white p-3"><span className="block text-slate-500">Bills reserved</span><b className="text-money-sm">{money(reservedBills, currency)}</b></div></div>
+                <div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div className="rounded-2xl border border-[#c5f0d5] bg-white p-3"><span className="block text-slate-500">Liquid money</span><b className="text-money-sm">{money(liquid, currency)}</b></div><div className="rounded-2xl border border-[#c5f0d5] bg-white p-3"><span className="block text-slate-500">Salary-funded bills</span><b className="text-money-sm">{money(reservedBills, currency)}</b>{billShortfall > 0 && <small className="mt-1 block text-amber-700">{money(billShortfall, currency)} still to fund</small>}</div></div>
                 {!accounts.length && <p className="mt-4 text-sm text-slate-600">Add an account first before recording income.</p>}
                 {recordingIncome && <IncomeForm accounts={accounts} onClose={() => setRecordingIncome(false)} />}
                 {recordingExpense && <ExpenseForm accounts={accounts} onClose={() => setRecordingExpense(false)} />}

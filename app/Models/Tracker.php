@@ -12,6 +12,7 @@ class Tracker extends Model
     use HasUuids, SoftDeletes;
 
     protected $guarded = [];
+    protected $hidden = ['share_token'];
 
     public function members(): HasMany { return $this->hasMany(TrackerMember::class); }
     public function expenses(): HasMany { return $this->hasMany(Expense::class); }

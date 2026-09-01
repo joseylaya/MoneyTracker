@@ -14,7 +14,7 @@ use Inertia\Inertia;
 
 Route::get('/', function () {
     if (auth()->check()) {
-        return redirect()->route('trackers.index');
+        return redirect()->route('home');
     }
 
     return Inertia::render('Welcome', [
@@ -23,8 +23,9 @@ Route::get('/', function () {
     ]);
 });
 Route::get('/firebase-messaging-sw.js', FirebaseMessagingServiceWorkerController::class)->name('firebase-messaging-sw');
+Route::get('/join/{token}', [TrackerController::class, 'joinShared'])->name('trackers.share.join');
 Route::get('/dashboard', function () {
-    return redirect()->route('trackers.index');
+    return redirect()->route('home');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
@@ -36,6 +37,7 @@ Route::middleware('auth')->group(function () {
     Route::patch('/notifications/{notification}/read', [TrackerNotificationController::class, 'read'])->name('notifications.read');
     Route::delete('/notifications/{notification}/group', [TrackerNotificationController::class, 'dismissGroup'])->name('notifications.group.dismiss');
     Route::delete('/notifications/{notification}', [TrackerNotificationController::class, 'dismiss'])->name('notifications.dismiss');
+    Route::middleware('email')->group(function () {
     Route::get('/home', [PersonalFinanceController::class, 'index'])->name('home');
     Route::get('/personal/accounts', [PersonalFinanceController::class, 'accounts'])->name('personal.accounts');
     Route::post('/personal/accounts', [PersonalFinanceController::class, 'storeAccount'])->name('personal.accounts.store');
@@ -52,10 +54,15 @@ Route::middleware('auth')->group(function () {
     Route::put('/personal/buckets', [PersonalFinanceController::class, 'saveBucket'])->name('personal.buckets.save');
     Route::delete('/personal/buckets/{bucket}', [PersonalFinanceController::class, 'destroyBucket'])->name('personal.buckets.destroy');
     Route::post('/personal/reconciliations', [PersonalFinanceController::class, 'reconcile'])->name('personal.reconciliations.store');
+    });
     Route::get('/trackers', [TrackerController::class, 'index'])->name('trackers.index');
     Route::get('/trackers/create', [TrackerController::class, 'create'])->name('trackers.create');
     Route::post('/trackers', [TrackerController::class, 'store'])->name('trackers.store');
+    Route::patch('/trackers/{tracker}/archive', [TrackerController::class, 'archive'])->name('trackers.archive');
+    Route::patch('/trackers/{tracker}/restore', [TrackerController::class, 'restore'])->name('trackers.restore');
+    Route::delete('/trackers/{tracker}', [TrackerController::class, 'destroy'])->name('trackers.destroy');
     Route::get('/trackers/{tracker}', [TrackerController::class, 'show'])->name('trackers.show');
+    Route::post('/trackers/{tracker}/share-link', [TrackerController::class, 'shareLink'])->name('trackers.share-link.store');
     Route::get('/trackers/{tracker}/members', [TrackerController::class, 'members'])->name('trackers.members.index');
     Route::get('/trackers/{tracker}/members/suggestions', [TrackerController::class, 'memberSuggestions'])->name('trackers.members.suggestions');
     Route::get('/trackers/{tracker}/conversation', [TrackerConversationController::class, 'index'])->name('trackers.conversation.index');
@@ -70,6 +77,8 @@ Route::middleware('auth')->group(function () {
     Route::patch('/trackers/{tracker}/members/{member}/role', [TrackerController::class, 'changeMemberRole'])->name('trackers.members.role.update');
     Route::get('/trackers/{tracker}/expenses/create', [TrackerController::class, 'expenseCreate'])->name('trackers.expenses.create');
     Route::post('/trackers/{tracker}/expenses', [TrackerController::class, 'storeExpense'])->name('trackers.expenses.store');
+    Route::get('/trackers/{tracker}/expenses/{expense}/edit', [TrackerController::class, 'expenseEdit'])->name('trackers.expenses.edit');
+    Route::patch('/trackers/{tracker}/expenses/{expense}', [TrackerController::class, 'updateExpense'])->name('trackers.expenses.update');
     Route::get('/trackers/{tracker}/expenses/{expense}', [TrackerController::class, 'expenseShow'])->name('trackers.expenses.show');
     Route::get('/trackers/{tracker}/expenses/{expense}/comments/older', [ExpenseCommentController::class, 'older'])->name('trackers.expenses.comments.older');
     Route::post('/trackers/{tracker}/expenses/{expense}/comments', [ExpenseCommentController::class, 'store'])->name('trackers.expenses.comments.store');

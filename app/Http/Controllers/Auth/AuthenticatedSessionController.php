@@ -33,7 +33,12 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        $intended = $request->session()->pull('url.intended');
+        if ($intended && str_starts_with((string) parse_url($intended, PHP_URL_PATH), '/join/')) {
+            return redirect()->to($intended);
+        }
+
+        return redirect()->route('trackers.index');
     }
 
     /**

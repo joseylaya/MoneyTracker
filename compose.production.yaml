@@ -24,6 +24,10 @@ services:
       ASSET_URL: https://splitshare.jmgaming.site
       SESSION_PATH: /
     volumes:
+      # PHP and Nginx must read one shared Vite manifest/build. Keeping this
+      # mounted avoids PHP rendering a new entry file while Nginx serves an old
+      # hashed JavaScript release.
+      - ./public:/var/www/html/public:ro
       - ./storage:/var/www/html/storage
       - ./bootstrap/cache:/var/www/html/bootstrap/cache
       - ./secrets/firebase-service-account.json:/run/secrets/firebase-service-account.json:ro

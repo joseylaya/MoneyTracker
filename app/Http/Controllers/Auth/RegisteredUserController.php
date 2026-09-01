@@ -36,14 +36,14 @@ class RegisteredUserController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
+            'username' => ['required','string','lowercase','min:3','max:40','regex:/^[a-z0-9_]+$/','unique:users,username'],
+            'email' => 'nullable|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
         $user = DB::transaction(function () use ($request) {
-            $user = User::create(['name' => $request->name, 'email' => $request->email, 'password' => Hash::make($request->password)]);
-            $invitations = TrackerInvitation::whereRaw('lower(email) = ?', [strtolower($user->email)])->where('status', 'pending')->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))->get();
+            $user = User::create(['name' => $request->username, 'username' => $request->username, 'email' => $request->email, 'password' => Hash::make($request->password)]);
+            $invitations = $user->email ? TrackerInvitation::whereRaw('lower(email) = ?', [strtolower($user->email)])->where('status', 'pending')->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))->get() : collect();
             foreach ($invitations as $invitation) {
                 TrackerMember::firstOrCreate(['tracker_id' => $invitation->tracker_id, 'user_id' => $user->id], ['role' => $invitation->role, 'status' => 'active', 'joined_at' => now(), 'created_by' => $invitation->invited_by]);
                 $invitation->update(['status' => 'accepted', 'accepted_at' => now()]);
@@ -56,6 +56,11 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
-        return redirect(route('dashboard', absolute: false));
+        $intended = $request->session()->pull('url.intended');
+        if ($intended && str_starts_with((string) parse_url($intended, PHP_URL_PATH), '/join/')) {
+            return redirect()->to($intended);
+        }
+
+        return redirect()->route('trackers.index');
     }
 }

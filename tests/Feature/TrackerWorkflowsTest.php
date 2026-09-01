@@ -4,7 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\Tracker;
 use App\Models\TrackerMember;
+use App\Models\Expense;
+use App\Models\ExpenseSplit;
+use App\Models\Settlement;
 use App\Models\User;
+use App\Services\TrackerFinance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -32,11 +36,57 @@ class TrackerWorkflowsTest extends TestCase
         $this->actingAs($owner)->get(route('trackers.expenses.create', $tracker))->assertOk();
     }
 
+    public function test_owner_can_archive_restore_and_soft_delete_a_tracker(): void
+    {
+        $owner = User::factory()->create(); $tracker = $this->tracker($owner);
+
+        $this->actingAs($owner)->patch(route('trackers.archive', $tracker))->assertRedirect(route('trackers.index'));
+        $this->assertDatabaseHas('trackers', ['id' => $tracker->id, 'status' => 'archived']);
+        $this->actingAs($owner)->get(route('trackers.index'))->assertOk()->assertInertia(fn ($page) => $page->where('trackers', [])->has('archivedTrackers', 1));
+        $this->actingAs($owner)->get(route('trackers.expenses.create', $tracker))->assertForbidden();
+
+        $this->actingAs($owner)->patch(route('trackers.restore', $tracker))->assertRedirect();
+        $this->assertDatabaseHas('trackers', ['id' => $tracker->id, 'status' => 'active']);
+        $this->actingAs($owner)->delete(route('trackers.destroy', $tracker))->assertRedirect(route('trackers.index'));
+        $this->assertSoftDeleted('trackers', ['id' => $tracker->id, 'deleted_by' => $owner->id]);
+    }
+
+    public function test_non_owner_cannot_archive_or_delete_a_tracker(): void
+    {
+        $owner = User::factory()->create(); $editor = User::factory()->create(); $tracker = $this->tracker($owner);
+        TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $editor->id, 'role' => 'editor', 'status' => 'active', 'joined_at' => now(), 'created_by' => $owner->id]);
+
+        $this->actingAs($editor)->patch(route('trackers.archive', $tracker))->assertForbidden();
+        $this->actingAs($editor)->delete(route('trackers.destroy', $tracker))->assertForbidden();
+    }
+
     public function test_tracker_detail_renders_after_an_expense_is_created(): void
     {
         $owner = User::factory()->create(); $tracker = $this->tracker($owner);
         $this->actingAs($owner)->post(route('trackers.expenses.store', $tracker), ['description' => 'Fuel', 'amount' => '300.00', 'paid_by_user_id' => $owner->id, 'expense_date' => today()->toDateString(), 'participants' => [$owner->id]])->assertRedirect();
         $this->actingAs($owner)->get(route('trackers.show', $tracker))->assertOk();
+    }
+
+    public function test_editor_can_correct_an_expense_and_an_overpayment_becomes_money_owed_back(): void
+    {
+        $owner = User::factory()->create(); $editor = User::factory()->create(); $tracker = $this->tracker($owner);
+        TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $editor->id, 'role' => 'editor', 'status' => 'active', 'joined_at' => now(), 'created_by' => $owner->id]);
+        $expense = Expense::create(['tracker_id' => $tracker->id, 'description' => 'Dinner', 'amount_minor' => 200000, 'paid_by_user_id' => $owner->id, 'expense_date' => today(), 'created_by' => $owner->id]);
+        foreach ([$owner, $editor] as $member) ExpenseSplit::create(['expense_id' => $expense->id, 'user_id' => $member->id, 'amount_minor' => 100000]);
+        Settlement::create(['tracker_id' => $tracker->id, 'from_user_id' => $editor->id, 'to_user_id' => $owner->id, 'amount_minor' => 100000, 'settlement_date' => today(), 'created_by' => $editor->id]);
+
+        $finance = app(TrackerFinance::class);
+        $this->assertSame([], $finance->directDebts($tracker));
+
+        $this->actingAs($editor)->patch(route('trackers.expenses.update', [$tracker, $expense]), [
+            'description' => 'Dinner (corrected)', 'amount' => '1000.00', 'paid_by_user_id' => $owner->id,
+            'expense_date' => today()->toDateString(), 'participants' => [$owner->id, $editor->id],
+        ])->assertRedirect(route('trackers.expenses.show', [$tracker, $expense]));
+
+        $this->assertDatabaseHas('expenses', ['id' => $expense->id, 'description' => 'Dinner (corrected)', 'amount_minor' => 100000, 'updated_by' => $editor->id]);
+        $this->assertDatabaseCount('expense_splits', 2);
+        $this->assertSame([['from_user_id' => $owner->id, 'to_user_id' => $editor->id, 'amount_minor' => 50000]], $finance->directDebts($tracker));
+        $this->assertDatabaseHas('activity_logs', ['tracker_id' => $tracker->id, 'action' => 'expense.updated', 'subject_id' => $expense->id]);
     }
 
     public function test_owner_can_create_pending_invitation_for_unregistered_email(): void

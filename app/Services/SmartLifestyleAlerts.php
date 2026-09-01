@@ -66,7 +66,7 @@ class SmartLifestyleAlerts
     /** @param array<string, mixed> $summary */
     private function send(User $user, string $type, string $title, array $summary, string $context): void
     {
-        $remaining = max(0, $summary['lifestyleBudget'] - $summary['lifestyle']);
+        $remaining = $summary['lifestyleAvailable'];
         $usedPercent = (int) floor(($summary['lifestyle'] / $summary['lifestyleBudget']) * 100);
         $currency = $summary['settings']->currency_code;
         $body = 'Lifestyle left: '.$this->money($remaining, $currency)." · {$usedPercent}% used. {$context}";

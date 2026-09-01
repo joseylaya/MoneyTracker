@@ -98,8 +98,10 @@ class TrackerConversationController extends Controller
     public function requestSettlement(Request $request, Tracker $tracker, TrackerFinance $finance, TrackerNotifier $notifier): RedirectResponse
     {
         abort_unless($request->user()->can('chat', $tracker), 403);
-        $data = $request->validate(['to_user_id' => ['required', 'integer'], 'amount' => ['required', 'regex:/^\d+(\.\d{1,2})?$/'], 'settlement_date' => ['required', 'date'], 'note' => ['nullable', 'string', 'max:1000']]);
+        $data = $request->validate(['to_user_id' => ['required', 'integer'], 'amount' => ['required', 'regex:/^\d+(\.\d{1,2})?$/'], 'settlement_date' => ['required', 'date', 'before_or_equal:today'], 'note' => ['nullable', 'string', 'max:1000']]);
         $amount = $this->minor($data['amount']);
+        if ($amount <= 0) return back()->withErrors(['amount' => 'The settlement amount must be greater than zero.']);
+        abort_unless($tracker->members()->where('user_id', $data['to_user_id'])->where('status', 'active')->exists(), 422);
         $debt = collect($finance->directDebts($tracker, false))->first(fn ($item) => $item['from_user_id'] === $request->user()->id && $item['to_user_id'] === (int) $data['to_user_id']);
         abort_unless($debt && $amount <= $debt['amount_minor'], 422);
         $message = DB::transaction(function () use ($request, $tracker, $data, $amount) {

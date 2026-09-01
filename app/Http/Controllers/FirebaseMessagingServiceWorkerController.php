@@ -31,7 +31,17 @@ messaging.onBackgroundMessage((payload) => {
 });
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data?.url || '/'));
+  const destination = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
+    const existing = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    if (!existing) return clients.openWindow(destination);
+    try {
+      await existing.navigate(destination);
+      return existing.focus();
+    } catch {
+      return clients.openWindow(destination);
+    }
+  }));
 });
 JS;
 

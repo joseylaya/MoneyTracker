@@ -4,7 +4,7 @@ import { Head, Link, useForm } from '@inertiajs/react';
 
 export default function Login({ status, canResetPassword }) {
     const { data, setData, post, processing, errors, reset } = useForm({
-        email: '',
+        login: '',
         password: '',
         remember: false,
     });
@@ -12,9 +12,13 @@ export default function Login({ status, canResetPassword }) {
     const submit = (e) => {
         e.preventDefault();
         sessionStorage.setItem('splitshare:pwa-install-guide-after-auth', '1');
+        sessionStorage.setItem('splitshare:push-onboarding-after-login', '1');
 
         post(route('login'), {
-            onError: () => sessionStorage.removeItem('splitshare:pwa-install-guide-after-auth'),
+            onError: () => {
+                sessionStorage.removeItem('splitshare:pwa-install-guide-after-auth');
+                sessionStorage.removeItem('splitshare:push-onboarding-after-login');
+            },
             onFinish: () => reset('password'),
         });
     };
@@ -28,19 +32,19 @@ export default function Login({ status, canResetPassword }) {
 
             <form onSubmit={submit} className="mt-7 space-y-5">
                 <div>
-                    <label htmlFor="email" className="text-sm font-bold text-slate-700">Email address</label>
+                    <label htmlFor="login" className="text-sm font-bold text-slate-700">Nickname or email</label>
                     <input
-                        id="email"
-                        type="email"
-                        name="email"
-                        value={data.email}
+                        id="login"
+                        type="text"
+                        name="login"
+                        value={data.login}
                         className="mt-2 ss-input"
                         autoComplete="username"
                         autoFocus
-                        onChange={(e) => setData('email', e.target.value)}
+                        onChange={(e) => setData('login', e.target.value)}
                     />
 
-                    <InputError message={errors.email} className="mt-2" />
+                    <InputError message={errors.login} className="mt-2" />
                 </div>
 
                 <div className="mt-4">
