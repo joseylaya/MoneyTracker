@@ -10,6 +10,7 @@ use App\Models\Settlement;
 use App\Models\User;
 use App\Services\TrackerFinance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class TrackerWorkflowsTest extends TestCase
@@ -183,5 +184,42 @@ class TrackerWorkflowsTest extends TestCase
         $this->assertSame('pending', $request->status); $this->assertDatabaseCount('settlements', 0);
         $this->actingAs($owner)->post(route('trackers.conversation.settlements.response', [$tracker, $request]), ['decision' => 'approved'])->assertRedirect();
         $this->assertSame('approved', $request->fresh()->status); $this->assertDatabaseCount('settlements', 1);
+    }
+
+    public function test_settle_up_page_notifies_recipient_and_waits_for_approval(): void
+    {
+        $owner = User::factory()->create(); $member = User::factory()->create(); $tracker = $this->tracker($owner);
+        TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $member->id, 'role' => 'editor', 'status' => 'active', 'joined_at' => now(), 'created_by' => $owner->id]);
+        $this->actingAs($owner)->post(route('trackers.expenses.store', $tracker), ['description' => 'Hotel', 'amount' => '200.00', 'paid_by_user_id' => $owner->id, 'expense_date' => today()->toDateString(), 'participants' => [$owner->id, $member->id]]);
+
+        $this->actingAs($member)->post(route('trackers.settlements.store', $tracker), [
+            'from_user_id' => $member->id, 'to_user_id' => $owner->id, 'amount' => '100.00',
+            'settlement_date' => today()->toDateString(), 'note' => 'Bank transfer',
+        ])->assertRedirect(route('trackers.show', $tracker))->assertSessionHas('success');
+
+        $settlementRequest = $tracker->settlementRequests()->firstOrFail();
+        $this->assertSame('pending', $settlementRequest->status);
+        $this->assertDatabaseCount('settlements', 0);
+        $this->assertDatabaseHas('tracker_messages', ['tracker_id' => $tracker->id, 'settlement_request_id' => $settlementRequest->id, 'type' => 'settlement_request']);
+        $this->assertDatabaseHas('tracker_notifications', ['tracker_id' => $tracker->id, 'user_id' => $owner->id, 'type' => 'settlement.requested']);
+
+        $this->actingAs($owner)->post(route('trackers.conversation.settlements.response', [$tracker, $settlementRequest]), ['decision' => 'approved'])->assertRedirect();
+        $this->assertSame('approved', $settlementRequest->fresh()->status);
+        $this->assertDatabaseHas('settlements', ['tracker_id' => $tracker->id, 'from_user_id' => $member->id, 'to_user_id' => $owner->id, 'amount_minor' => 10000]);
+    }
+
+    public function test_personal_activity_includes_historical_direct_settlements(): void
+    {
+        $owner = User::factory()->create(); $member = User::factory()->create(); $tracker = $this->tracker($owner);
+        TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $member->id, 'role' => 'editor', 'status' => 'active', 'joined_at' => now(), 'created_by' => $owner->id]);
+        Settlement::create(['tracker_id' => $tracker->id, 'from_user_id' => $member->id, 'to_user_id' => $owner->id, 'amount_minor' => 2500, 'settlement_date' => today(), 'created_by' => $member->id]);
+
+        $this->actingAs($member)->get(route('trackers.show', $tracker))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('Trackers/Show')
+            ->has('personalTransactions', 1)
+            ->where('personalTransactions.0.type', 'settlement')
+            ->where('personalTransactions.0.direction', 'out')
+            ->where('personalTransactions.0.status', 'completed')
+            ->where('personalTransactions.0.amount_minor', 2500));
     }
 }

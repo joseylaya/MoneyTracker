@@ -4,13 +4,16 @@ namespace App\Events;
 
 use App\Models\TrackerNotification;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class TrackerNotificationCreated implements ShouldBroadcastNow
+class TrackerNotificationCreated implements ShouldBroadcast
 {
     use Dispatchable, SerializesModels;
+
+    /** Do not let a temporary realtime outage turn a saved action into an HTTP 500. */
+    public string $queue = 'realtime';
 
     public function __construct(
         public TrackerNotification $notification,

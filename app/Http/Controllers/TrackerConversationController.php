@@ -102,7 +102,7 @@ class TrackerConversationController extends Controller
         $amount = $this->minor($data['amount']);
         if ($amount <= 0) return back()->withErrors(['amount' => 'The settlement amount must be greater than zero.']);
         abort_unless($tracker->members()->where('user_id', $data['to_user_id'])->where('status', 'active')->exists(), 422);
-        $debt = collect($finance->directDebts($tracker, false))->first(fn ($item) => $item['from_user_id'] === $request->user()->id && $item['to_user_id'] === (int) $data['to_user_id']);
+        $debt = collect($finance->spenderObligations($tracker))->first(fn ($item) => $item['from_user_id'] === $request->user()->id && $item['to_user_id'] === (int) $data['to_user_id']);
         abort_unless($debt && $amount <= $debt['amount_minor'], 422);
         $message = DB::transaction(function () use ($request, $tracker, $data, $amount) {
             $settlementRequest = TrackerSettlementRequest::create(['tracker_id' => $tracker->id, 'from_user_id' => $request->user()->id, 'to_user_id' => $data['to_user_id'], 'amount_minor' => $amount, 'settlement_date' => $data['settlement_date'], 'note' => $data['note'] ?? null]);
@@ -119,7 +119,7 @@ class TrackerConversationController extends Controller
         $data = $request->validate(['decision' => ['required', 'in:approved,declined']]);
         DB::transaction(function () use ($data, $settlementRequest, $request, $tracker, $finance) {
             if ($data['decision'] === 'declined') { $settlementRequest->update(['status' => 'declined', 'responded_by' => $request->user()->id, 'responded_at' => now()]); return; }
-            $debt = collect($finance->directDebts($tracker, false))->first(fn ($item) => $item['from_user_id'] === $settlementRequest->from_user_id && $item['to_user_id'] === $settlementRequest->to_user_id);
+            $debt = collect($finance->spenderObligations($tracker))->first(fn ($item) => $item['from_user_id'] === $settlementRequest->from_user_id && $item['to_user_id'] === $settlementRequest->to_user_id);
             abort_unless($debt && $settlementRequest->amount_minor <= $debt['amount_minor'], 422);
             $settlement = Settlement::create(['tracker_id' => $tracker->id, 'from_user_id' => $settlementRequest->from_user_id, 'to_user_id' => $settlementRequest->to_user_id, 'amount_minor' => $settlementRequest->amount_minor, 'settlement_date' => $settlementRequest->settlement_date, 'note' => $settlementRequest->note, 'created_by' => $settlementRequest->from_user_id]);
             $settlementRequest->update(['status' => 'approved', 'approved_settlement_id' => $settlement->id, 'responded_by' => $request->user()->id, 'responded_at' => now()]);

@@ -11,8 +11,10 @@ use App\Models\Settlement;
 use App\Models\Tracker;
 use App\Models\TrackerMember;
 use App\Models\TrackerSettlementRequest;
+use App\Models\TrackerMessage;
 use App\Models\User;
 use App\Models\TrackerInvitation;
+use App\Events\TrackerMessageCreated;
 use App\Services\TrackerFinance;
 use App\Services\TrackerCache;
 use App\Services\TrackerNotifier;
@@ -91,6 +93,47 @@ class TrackerController extends Controller
             ->where('user_id', '!=', $request->user()->id)
             ->when($membership->last_read_chat_at, fn ($query, $lastReadAt) => $query->where('created_at', '>', $lastReadAt))
             ->count();
+        $settlementRequests = $tracker->settlementRequests()
+            ->where(fn ($query) => $query->where('from_user_id', $request->user()->id)->orWhere('to_user_id', $request->user()->id))
+            ->with(['fromUser:id,name', 'toUser:id,name'])->latest()->get();
+        $approvedRequests = $settlementRequests->where('status', 'approved')->whereNotNull('approved_settlement_id')->keyBy('approved_settlement_id');
+        $settlementHistory = Settlement::withTrashed()
+            ->where('tracker_id', $tracker->id)
+            ->where(fn ($query) => $query->where('from_user_id', $request->user()->id)->orWhere('to_user_id', $request->user()->id))
+            ->with(['sender:id,name', 'recipient:id,name'])->latest()->get()
+            ->map(function (Settlement $settlement) use ($request, $approvedRequests) {
+                $outgoing = $settlement->from_user_id === $request->user()->id;
+                return [
+                    'id' => $settlement->id, 'type' => 'settlement', 'direction' => $outgoing ? 'out' : 'in',
+                    'status' => $settlement->trashed() ? 'reversed' : ($approvedRequests->has($settlement->id) ? 'approved' : 'completed'),
+                    'title' => $outgoing ? 'Payment to '.$settlement->recipient->name : 'Payment from '.$settlement->sender->name,
+                    'amount_minor' => (int) $settlement->amount_minor,
+                    'date' => $settlement->settlement_date?->format('Y-m-d'), 'created_at' => $settlement->created_at,
+                ];
+            });
+        $requestHistory = $settlementRequests
+            ->filter(fn (TrackerSettlementRequest $settlementRequest) => $settlementRequest->status !== 'approved' || ! $settlementRequest->approved_settlement_id)
+            ->map(fn (TrackerSettlementRequest $settlementRequest) => [
+                'id' => $settlementRequest->id, 'type' => 'settlement',
+                'direction' => $settlementRequest->from_user_id === $request->user()->id ? 'out' : 'in',
+                'status' => $settlementRequest->status,
+                'title' => $settlementRequest->from_user_id === $request->user()->id
+                    ? 'Payment to '.$settlementRequest->toUser->name
+                    : 'Payment from '.$settlementRequest->fromUser->name,
+                'amount_minor' => (int) $settlementRequest->amount_minor,
+                'date' => $settlementRequest->settlement_date?->format('Y-m-d'), 'created_at' => $settlementRequest->created_at,
+            ]);
+        $personalTransactions = $expenses
+            ->where('created_by', $request->user()->id)
+            ->map(fn (Expense $expense) => [
+                'id' => $expense->id, 'type' => 'expense', 'direction' => 'expense', 'status' => 'recorded',
+                'title' => $expense->description, 'amount_minor' => (int) $expense->amount_minor,
+                'date' => $expense->expense_date?->format('Y-m-d'), 'created_at' => $expense->created_at,
+            ])
+            ->concat($settlementHistory)
+            ->concat($requestHistory)
+            ->sortByDesc(fn (array $item) => $item['date'].' '.$item['created_at'])
+            ->values();
         return Inertia::render('Trackers/Show', [
             'tracker' => $tracker,
             'membership' => ['role' => $membership->role, 'can_manage_members' => $request->user()->can('manageMembers', $tracker), 'can_manage_finances' => $request->user()->can('update', $tracker), 'can_settle' => $request->user()->can('settle', $tracker), 'can_manage_lifecycle' => $request->user()->can('manageLifecycle', $tracker)],
@@ -101,6 +144,7 @@ class TrackerController extends Controller
             'currentUserId' => $request->user()->id,
             'unreadMessagesCount' => $unreadMessagesCount,
             'unreadNotificationsCount' => $tracker->notifications()->where('user_id', $request->user()->id)->whereNull('dismissed_at')->whereNull('read_at')->count(),
+            'personalTransactions' => $personalTransactions,
         ]);
     }
 
@@ -429,7 +473,8 @@ class TrackerController extends Controller
     {
         $this->authorize('settle', $tracker);
         $members = collect($cache->activeMembers($tracker))->map(fn ($member) => collect($member)->only(['id', 'name'])->all())->values();
-        return Inertia::render('Settlements/Create', ['tracker' => $tracker, 'members' => $members, 'debts' => $finance->spenderObligations($tracker), 'currentUserId' => $request->user()->id]);
+        $debts = collect($finance->spenderObligations($tracker))->where('from_user_id', $request->user()->id)->values();
+        return Inertia::render('Settlements/Create', ['tracker' => $tracker, 'members' => $members, 'debts' => $debts, 'currentUserId' => $request->user()->id]);
     }
 
     public function storeSettlement(Request $request, Tracker $tracker, TrackerFinance $finance, TrackerNotifier $notifier): RedirectResponse
@@ -440,16 +485,16 @@ class TrackerController extends Controller
         if ($amount <= 0) return back()->withErrors(['amount' => 'The settlement amount must be greater than zero.']);
         $activeIds = $tracker->members()->where('status', 'active')->pluck('user_id')->map(fn ($id) => (int) $id)->all();
         abort_unless(in_array((int) $data['from_user_id'], $activeIds, true) && in_array((int) $data['to_user_id'], $activeIds, true), 422);
-        abort_unless(in_array($request->user()->id, [(int) $data['from_user_id'], (int) $data['to_user_id']], true), 403);
+        abort_unless($request->user()->id === (int) $data['from_user_id'], 403);
         $debt = collect($finance->spenderObligations($tracker))->first(fn ($debt) => $debt['from_user_id'] === (int) $data['from_user_id'] && $debt['to_user_id'] === (int) $data['to_user_id']);
         if (! $debt || $amount > $debt['amount_minor']) return back()->withErrors(['amount' => 'The settlement cannot be greater than this obligation.']);
-        DB::transaction(function () use ($tracker, $request, $data, $amount) {
-            $settlement = Settlement::create(['tracker_id' => $tracker->id, 'from_user_id' => $data['from_user_id'], 'to_user_id' => $data['to_user_id'], 'amount_minor' => $amount, 'settlement_date' => $data['settlement_date'], 'note' => $data['note'], 'created_by' => $request->user()->id]);
-            $this->activity($tracker, $request->user()->id, 'settlement.created', 'settlement', $settlement->id, ['amount_minor' => $amount, 'from_user_id' => $settlement->from_user_id, 'to_user_id' => $settlement->to_user_id]);
-        });
-        $finance->forget($tracker);
-        $notifier->members($tracker, $request->user(), 'settlement.created', 'Settlement recorded in '.$tracker->name, $request->user()->name.' recorded a settlement.', route('trackers.show', $tracker));
-        return to_route('trackers.show', $tracker)->with('success', 'Settlement recorded and balances updated.');
+        $message = DB::transaction(function () use ($tracker, $request, $data, $amount) {
+            $settlementRequest = TrackerSettlementRequest::create(['tracker_id' => $tracker->id, 'from_user_id' => $request->user()->id, 'to_user_id' => $data['to_user_id'], 'amount_minor' => $amount, 'settlement_date' => $data['settlement_date'], 'note' => $data['note'] ?? null]);
+            return TrackerMessage::create(['tracker_id' => $tracker->id, 'user_id' => $request->user()->id, 'body' => '', 'type' => 'settlement_request', 'settlement_request_id' => $settlementRequest->id]);
+        })->load(['author:id,name', 'attachments', 'settlementRequest.fromUser:id,name', 'settlementRequest.toUser:id,name']);
+        TrackerMessageCreated::dispatch($message);
+        $notifier->user($message->settlementRequest->to_user_id, $tracker, $request->user()->id, 'settlement.requested', 'Settlement approval requested', $request->user()->name.' requested approval for a settlement in '.$tracker->name, route('trackers.conversation.index', $tracker));
+        return to_route('trackers.show', $tracker)->with('success', 'Settlement sent for approval. Balances will change after the recipient accepts it.');
     }
 
     private function membership(Tracker $tracker, int $userId): ?TrackerMember { return $tracker->members()->where('user_id', $userId)->where('status', 'active')->first(); }
