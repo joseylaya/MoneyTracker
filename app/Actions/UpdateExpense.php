@@ -21,7 +21,7 @@ class UpdateExpense
 
         DB::transaction(function () use ($expense, $actor, $data, $before) {
             $expense->update([
-                'description' => $data['description'], 'amount_minor' => $data['amount_minor'],
+                'description' => $data['description'], 'amount_minor' => $data['amount_minor'], 'itinerary_item_id' => $data['itinerary_item_id'] ?? null,
                 'paid_by_user_id' => $data['paid_by_user_id'], 'expense_date' => $data['expense_date'],
                 'note' => $data['note'], 'updated_by' => $actor->id, 'version' => $expense->version + 1,
                 'expense_type' => $data['expense_type'] ?? 'split', 'split_method' => $data['split_method'] ?? 'equal',

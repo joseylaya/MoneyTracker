@@ -6,11 +6,11 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import { Check, ChevronLeft, ChevronRight, Gift, Minus, Plus, Users } from 'lucide-react';
 import { useState } from 'react';
 
-export default function Create({ tracker, members, currentUserId }) {
+export default function Create({ tracker, members, currentUserId, itineraryOptions = [], initialItineraryItemId = '' }) {
     const payer = members.find((m) => Number(m.id) === Number(currentUserId))?.id ?? members[0]?.id ?? '';
     const [step, setStep] = useState(0);
     const { data, setData, post, processing, errors } = useForm({
-        description: '', amount: '', expense_date: new Date().toISOString().slice(0, 10), paid_by_user_id: String(payer), note: '',
+        description: '', amount: '', expense_date: new Date().toISOString().slice(0, 10), paid_by_user_id: String(payer), note: '', itinerary_item_id: initialItineraryItemId || '',
         expense_type: 'split', split_method: 'equal', unit_price: '', participants: members.map((m) => m.id),
         quantities: Object.fromEntries(members.map((m) => [m.id, 0])),
     });

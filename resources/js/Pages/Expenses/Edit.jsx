@@ -5,13 +5,13 @@ import { money } from '@/utils/money';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { Check, ChevronLeft, Minus, Plus } from 'lucide-react';
 
-export default function Edit({ tracker, expense, members }) {
+export default function Edit({ tracker, expense, members, itineraryOptions = [] }) {
     const initialQuantities = Object.fromEntries(members.map((member) => [member.id, expense.splits.find((split) => split.user_id === member.id)?.quantity ?? 0]));
     const { data, setData, patch, processing, errors } = useForm({
         description: expense.description, amount: (expense.amount_minor / 100).toFixed(2), expense_date: expense.expense_date,
         paid_by_user_id: String(expense.paid_by_user_id), note: expense.note || '', expense_type: expense.expense_type || 'split',
         split_method: expense.split_method || 'equal', unit_price: expense.unit_price_minor ? (expense.unit_price_minor / 100).toFixed(2) : '',
-        participants: expense.splits.map((split) => split.user_id), quantities: initialQuantities,
+        participants: expense.splits.map((split) => split.user_id), quantities: initialQuantities, itinerary_item_id: expense.itinerary_item_id || '',
     });
     const total = Math.round(Number(data.amount || 0) * 100), unit = Math.round(Number(data.unit_price || 0) * 100);
     const allocated = data.participants.reduce((sum, id) => sum + Number(data.quantities[id] || 0) * unit, 0);

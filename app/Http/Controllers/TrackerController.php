@@ -14,6 +14,7 @@ use App\Models\TrackerSettlementRequest;
 use App\Models\TrackerMessage;
 use App\Models\User;
 use App\Models\TrackerInvitation;
+use App\Models\ItineraryItem;
 use App\Events\TrackerMessageCreated;
 use App\Services\TrackerFinance;
 use App\Services\TrackerCache;
@@ -230,10 +231,14 @@ class TrackerController extends Controller
     public function expenseCreate(Request $request, Tracker $tracker, TrackerCache $cache): Response
     {
         $this->authorize('update', $tracker);
+        $initialItineraryItemId = $request->query('itinerary_item');
+        $this->ensureExpenseItinerary($tracker, $initialItineraryItemId);
         return Inertia::render('Expenses/Create', [
             'tracker' => $tracker,
             'members' => collect($cache->activeMembers($tracker))->map(fn ($member) => collect($member)->only(['id', 'name', 'role'])->all())->values(),
             'currentUserId' => $request->user()->id,
+            'itineraryOptions' => $this->itineraryOptions($tracker),
+            'initialItineraryItemId' => $initialItineraryItemId,
         ]);
     }
 
@@ -253,7 +258,7 @@ class TrackerController extends Controller
         $this->authorize('update', $tracker);
         abort_unless($expense->tracker_id === $tracker->id, 404);
         $expense->load(['splits.user:id,name']);
-        return Inertia::render('Expenses/Edit', ['tracker' => $tracker, 'expense' => $expense, 'members' => collect($cache->activeMembers($tracker))->map(fn ($member) => collect($member)->only(['id', 'name'])->all())->values()]);
+        return Inertia::render('Expenses/Edit', ['tracker' => $tracker, 'expense' => $expense, 'members' => collect($cache->activeMembers($tracker))->map(fn ($member) => collect($member)->only(['id', 'name'])->all())->values(), 'itineraryOptions' => $this->itineraryOptions($tracker)]);
     }
 
     public function updateExpense(Request $request, Tracker $tracker, Expense $expense, UpdateExpense $updater, TrackerNotifier $notifier): RedirectResponse
@@ -261,6 +266,7 @@ class TrackerController extends Controller
         $this->authorize('update', $tracker);
         abort_unless($expense->tracker_id === $tracker->id, 404);
         $data = $this->expenseData($request);
+        $this->ensureExpenseItinerary($tracker, $data['itinerary_item_id'] ?? null);
         $memberIds = $tracker->members()->where('status', 'active')->pluck('user_id')->all();
         abort_unless(in_array((int) $data['paid_by_user_id'], $memberIds, true) && empty(array_diff($data['participants'], $memberIds)), 422);
         $updated = $updater->handle($expense, $request->user(), $this->prepareExpenseData($data));
@@ -462,6 +468,7 @@ class TrackerController extends Controller
     {
         $this->authorize('update', $tracker);
         $data = $this->expenseData($request);
+        $this->ensureExpenseItinerary($tracker, $data['itinerary_item_id'] ?? null);
         $memberIds = $tracker->members()->where('status', 'active')->pluck('user_id')->all();
         abort_unless(in_array((int) $data['paid_by_user_id'], $memberIds, true) && empty(array_diff($data['participants'], $memberIds)), 422);
         $expense = app(CreateExpense::class)->handle($tracker, $request->user(), $this->prepareExpenseData($data));
@@ -509,6 +516,7 @@ class TrackerController extends Controller
         return $request->validate([
             'description' => ['required', 'string', 'max:255'], 'amount' => ['required', 'regex:/^\d+(\.\d{1,2})?$/'],
             'paid_by_user_id' => ['required', 'integer'], 'expense_date' => ['required', 'date'], 'note' => ['nullable', 'string', 'max:2000'],
+            'itinerary_item_id' => ['nullable', 'uuid'],
             'expense_type' => ['required', 'in:split,sponsored'], 'split_method' => ['required', 'in:equal,quantity'],
             'participants' => ['array', 'required_if:expense_type,split'], 'participants.*' => ['integer'],
             'unit_price' => ['nullable', 'required_if:split_method,quantity', 'regex:/^\d+(\.\d{1,2})?$/'],
@@ -522,5 +530,13 @@ class TrackerController extends Controller
             'participants' => array_values(array_unique(array_map('intval', $data['participants'] ?? [])))];
     }
     private function minor(string $amount): int { [$whole, $fraction] = array_pad(explode('.', $amount, 2), 2, ''); return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0'); }
+    private function ensureExpenseItinerary(Tracker $tracker, ?string $itemId): void
+    {
+        if ($itemId) abort_unless(ItineraryItem::whereKey($itemId)->whereHas('day', fn ($query) => $query->where('tracker_id', $tracker->id))->exists(), 422);
+    }
+    private function itineraryOptions(Tracker $tracker): array
+    {
+        return $tracker->itineraryDays()->with('items:id,itinerary_day_id,title,start_time,sort_order')->get()->flatMap(fn ($day) => $day->items->map(fn ($item) => ['id' => $item->id, 'label' => $day->date->format('M j').' · '.$item->title]))->values()->all();
+    }
     private function activity(Tracker $tracker, int $actorId, string $action, string $type, string $id, array $metadata): void { ActivityLog::create(['tracker_id' => $tracker->id, 'actor_user_id' => $actorId, 'action' => $action, 'subject_type' => $type, 'subject_id' => $id, 'metadata' => $metadata, 'created_at' => now()]); }
 }

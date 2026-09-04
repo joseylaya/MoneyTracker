@@ -15,6 +15,7 @@ class Expense extends Model
     protected function casts(): array { return ['expense_date' => 'date']; }
     public function payer(): BelongsTo { return $this->belongsTo(User::class, 'paid_by_user_id'); }
     public function tracker(): BelongsTo { return $this->belongsTo(Tracker::class); }
+    public function itineraryItem(): BelongsTo { return $this->belongsTo(ItineraryItem::class); }
     public function splits(): HasMany { return $this->hasMany(ExpenseSplit::class); }
     public function comments(): HasMany { return $this->hasMany(ExpenseComment::class); }
 }

@@ -16,7 +16,11 @@ if (isLocalDevelopment) {
     // Keep localhost reliable for feature work without removing the Firebase push worker.
     navigator.serviceWorker?.getRegistrations().then((registrations) => registrations
         .filter((registration) => [registration.active, registration.waiting, registration.installing]
-            .some((worker) => worker?.scriptURL.includes('/build/sw.js')))
+            .some((worker) => worker && (
+                worker.scriptURL.includes('/build/sw.js') ||
+                worker.scriptURL.includes('/build/service-worker.js') ||
+                worker.scriptURL.endsWith('/service-worker.js')
+            )))
         .forEach((registration) => registration.unregister()));
     window.caches?.keys().then((keys) => keys.filter((key) => key.startsWith('workbox-') || key.startsWith('vite-pwa-')).forEach((key) => window.caches.delete(key)));
 } else {

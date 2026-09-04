@@ -20,7 +20,7 @@ class CreateExpense
     {
         $expense = DB::transaction(function () use ($tracker, $actor, $data) {
             $expense = Expense::create([
-                'tracker_id' => $tracker->id, 'description' => $data['description'], 'amount_minor' => $data['amount_minor'],
+                'tracker_id' => $tracker->id, 'itinerary_item_id' => $data['itinerary_item_id'] ?? null, 'description' => $data['description'], 'amount_minor' => $data['amount_minor'],
                 'paid_by_user_id' => $data['paid_by_user_id'], 'expense_date' => $data['expense_date'], 'note' => $data['note'],
                 'expense_type' => $data['expense_type'] ?? 'split', 'split_method' => $data['split_method'] ?? 'equal',
                 'unit_price_minor' => $data['unit_price_minor'] ?? null,

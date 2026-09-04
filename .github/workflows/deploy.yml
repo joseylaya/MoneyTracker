@@ -38,7 +38,10 @@ jobs:
           set -euo pipefail
           cd "$DEPLOY_PATH"
           git fetch --prune origin main
-          git checkout --detach "$DEPLOY_REVISION"
+          # Production keeps persistent files and historical operational artifacts in
+          # this worktree. Overlay only the committed release instead of checking out,
+          # so deploys never remove uploads, secrets, the database, or local backups.
+          git archive "$DEPLOY_REVISION" | tar -x -C "$DEPLOY_PATH"
           docker compose -f compose.production.yaml up -d --build
           docker compose -f compose.production.yaml exec -T php php artisan migrate --force
           docker compose -f compose.production.yaml exec -T php php artisan optimize:clear

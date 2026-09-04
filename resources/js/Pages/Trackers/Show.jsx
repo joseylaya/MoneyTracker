@@ -3,7 +3,7 @@ import Avatar from '@/Components/Avatar';
 import BalanceCard from '@/Components/BalanceCard';
 import { money, shortDate } from '@/utils/money';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Archive, ArrowDownLeft, ArrowUpRight, ChevronLeft, ChevronRight, MessageCircle, ReceiptText, Share2, Trash2, Users } from 'lucide-react';
+import { Archive, ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, MessageCircle, ReceiptText, Share2, Trash2, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 const category = ['🍴', '🛒', '⛽', '🎬'];
@@ -43,6 +43,7 @@ export default function Show({ tracker, membership, members, expenses, myExpense
         <Head title={tracker.name} />
         <div className="page-wrap max-w-4xl">{flash.success && <div className="mb-4 rounded-2xl bg-[#e9fbf0] px-4 py-3 text-sm font-medium text-[#0d9b4b]">{flash.success}</div>}
             <BalanceCard balance={ownBalance} currency={tracker.currency_code} obligations={debts} currentUserId={currentUserId} people={people} settlementHref={membership.can_settle ? route('trackers.settlements.create', tracker.id) : null} />
+            <Link href={route('trackers.itinerary.index', tracker.id)} className="mt-4 flex items-center gap-4 rounded-[1.45rem] border border-[#c8f1d8] bg-white px-5 py-4 shadow-[0_3px_10px_rgba(15,23,42,.035)] transition hover:border-[#8ce4af] hover:bg-[#f9fffb]"><span className="flex size-11 items-center justify-center rounded-2xl bg-[#e8faef] text-[#16b85b]"><CalendarDays size={21}/></span><span className="min-w-0 flex-1"><span className="block font-display text-lg font-bold text-slate-900">Itinerary</span><span className="mt-0.5 block text-sm text-slate-500">Plan days, places, activities, and trip stops</span></span><ChevronRight size={20} className="shrink-0 text-[#26bf67]"/></Link>
             <Link href={route('trackers.conversation.index', tracker.id)} className="mt-4 flex items-center gap-4 rounded-[1.45rem] border border-[#c8f1d8] bg-white px-5 py-4 shadow-[0_3px_10px_rgba(15,23,42,.035)] transition hover:border-[#8ce4af] hover:bg-[#f9fffb]">
                 <span className="relative flex size-11 items-center justify-center rounded-2xl bg-[#e8faef] text-[#16b85b]"><MessageCircle size={21}/>{unreadMessages > 0 && <span className="absolute -right-2 -top-2 flex min-w-5 items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1 text-[10px] font-bold leading-5 text-white" aria-label={`${unreadMessages} unread messages`}>{unreadMessages > 99 ? '99+' : unreadMessages}</span>}</span>
                 <span className="min-w-0 flex-1"><span className="block font-display text-lg font-bold text-slate-900">Conversation</span><span className="mt-0.5 block truncate text-sm text-slate-500">Message everyone in this tracker{unreadNotificationsCount > 0 ? ` · ${unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount} new updates` : ''}</span></span>

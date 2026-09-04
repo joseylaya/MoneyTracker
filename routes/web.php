@@ -9,6 +9,8 @@ use App\Http\Controllers\PushDeviceController;
 use App\Http\Controllers\TrackerNotificationController;
 use App\Http\Controllers\FirebaseMessagingServiceWorkerController;
 use App\Http\Controllers\PersonalFinanceController;
+use App\Http\Controllers\ItineraryController;
+use App\Http\Controllers\ItineraryRouteController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -62,6 +64,15 @@ Route::middleware('auth')->group(function () {
     Route::patch('/trackers/{tracker}/restore', [TrackerController::class, 'restore'])->name('trackers.restore');
     Route::delete('/trackers/{tracker}', [TrackerController::class, 'destroy'])->name('trackers.destroy');
     Route::get('/trackers/{tracker}', [TrackerController::class, 'show'])->name('trackers.show');
+    Route::get('/trackers/{tracker}/itinerary', [ItineraryController::class, 'index'])->name('trackers.itinerary.index');
+    Route::post('/trackers/{tracker}/itinerary/days', [ItineraryController::class, 'storeDay'])->name('trackers.itinerary.days.store');
+    Route::patch('/trackers/{tracker}/itinerary/days/{day}', [ItineraryController::class, 'updateDay'])->name('trackers.itinerary.days.update');
+    Route::delete('/trackers/{tracker}/itinerary/days/{day}', [ItineraryController::class, 'destroyDay'])->name('trackers.itinerary.days.destroy');
+    Route::post('/trackers/{tracker}/itinerary/days/{day}/items', [ItineraryController::class, 'storeItem'])->name('trackers.itinerary.items.store');
+    Route::patch('/trackers/{tracker}/itinerary/items/{item}', [ItineraryController::class, 'updateItem'])->name('trackers.itinerary.items.update');
+    Route::delete('/trackers/{tracker}/itinerary/items/{item}', [ItineraryController::class, 'destroyItem'])->name('trackers.itinerary.items.destroy');
+    Route::patch('/trackers/{tracker}/itinerary/reorder', [ItineraryController::class, 'reorder'])->name('trackers.itinerary.reorder');
+    Route::get('/trackers/{tracker}/itinerary/days/{day}/route', ItineraryRouteController::class)->name('trackers.itinerary.route');
     Route::post('/trackers/{tracker}/share-link', [TrackerController::class, 'shareLink'])->name('trackers.share-link.store');
     Route::get('/trackers/{tracker}/members', [TrackerController::class, 'members'])->name('trackers.members.index');
     Route::get('/trackers/{tracker}/members/suggestions', [TrackerController::class, 'memberSuggestions'])->name('trackers.members.suggestions');

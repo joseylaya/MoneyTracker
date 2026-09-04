@@ -44,5 +44,9 @@ return [
         'project_id' => env('FIREBASE_PROJECT_ID'),
         'service_account' => env('FIREBASE_SERVICE_ACCOUNT_PATH'),
     ],
+    'itinerary_routing' => [
+        'driving_url' => env('OSRM_DRIVING_URL', 'https://router.project-osrm.org/route/v1/driving'),
+        'walking_url' => env('OSRM_WALKING_URL', 'https://routing.openstreetmap.de/routed-foot/route/v1/driving'),
+    ],
 
 ];
