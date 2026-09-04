@@ -42,7 +42,17 @@ jobs:
           # this worktree. Overlay only the committed release instead of checking out,
           # so deploys never remove uploads, secrets, the database, or local backups.
           git archive "$DEPLOY_REVISION" | tar -x -C "$DEPLOY_PATH"
-          docker compose -f compose.production.yaml up -d --build
+          docker compose -f compose.production.yaml build
+          release_assets="$(mktemp -d)"
+          asset_container="$(docker create splitshare-app:latest)"
+          docker cp "$asset_container:/var/www/html/public/build" "$release_assets/build"
+          docker rm "$asset_container"
+          if [ -d public/build ]; then
+            mv public/build "public/build.previous-$DEPLOY_REVISION"
+          fi
+          mv "$release_assets/build" public/build
+          rmdir "$release_assets"
+          docker compose -f compose.production.yaml up -d
           docker compose -f compose.production.yaml exec -T php php artisan migrate --force
           docker compose -f compose.production.yaml exec -T php php artisan optimize:clear
           docker compose -f compose.production.yaml exec -T php php artisan config:cache
