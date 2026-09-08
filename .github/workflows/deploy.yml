@@ -41,7 +41,10 @@ jobs:
           # Production keeps persistent files and historical operational artifacts in
           # this worktree. Overlay only the committed release instead of checking out,
           # so deploys never remove uploads, secrets, the database, or local backups.
-          git archive "$DEPLOY_REVISION" | tar -x -C "$DEPLOY_PATH"
+          git archive "$DEPLOY_REVISION" | tar \
+            --exclude=storage \
+            --exclude=bootstrap/cache \
+            -x -C "$DEPLOY_PATH"
           docker compose -f compose.production.yaml build
           release_assets="$(mktemp -d)"
           asset_container="$(docker create splitshare-app:latest)"
@@ -53,6 +56,9 @@ jobs:
           mv "$release_assets/build" public/build
           rmdir "$release_assets"
           docker compose -f compose.production.yaml up -d
+          # Nginx resolves the PHP container address when it starts. Refresh it
+          # after PHP is recreated so FastCGI never keeps the previous address.
+          docker compose -f compose.production.yaml restart nginx
           docker compose -f compose.production.yaml exec -T php php artisan migrate --force
           docker compose -f compose.production.yaml exec -T php php artisan optimize:clear
           docker compose -f compose.production.yaml exec -T php php artisan config:cache
