@@ -1,12 +1,17 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { Landmark, LogOut } from 'lucide-react';
 import DeleteUserForm from './Partials/DeleteUserForm';
 import UpdatePasswordForm from './Partials/UpdatePasswordForm';
 import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm';
 import PushNotifications from '@/Components/PushNotifications';
+import { detachBrowserPushFromCurrentUser } from '@/browserPush';
 
 export default function Edit({ mustVerifyEmail, status }) {
+    const logout = async () => {
+        await detachBrowserPushFromCurrentUser();
+        router.post(route('logout'));
+    };
     return (
         <AuthenticatedLayout
             header={
@@ -37,7 +42,7 @@ export default function Edit({ mustVerifyEmail, status }) {
 
                     <div className="ss-card flex flex-wrap items-center justify-between gap-4 p-6 sm:p-7">
                         <div><h2 className="font-display text-xl font-bold">Signed in on this device</h2><p className="mt-1 text-sm text-slate-500">End this session securely when you are finished.</p></div>
-                        <Link href={route('logout')} method="post" as="button" className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"><LogOut size={18}/>Log out</Link>
+                        <button type="button" onClick={logout} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"><LogOut size={18}/>Log out</button>
                     </div>
 
                     <div className="rounded-[1.65rem] border border-rose-100 bg-rose-50/50 p-6 sm:p-8">

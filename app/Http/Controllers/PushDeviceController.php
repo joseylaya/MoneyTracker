@@ -44,11 +44,18 @@ class PushDeviceController extends Controller
 
     public function destroy(Request $request)
     {
-        $data = $request->validate(['endpoint' => ['required', 'string', 'max:4096']]);
+        $data = $request->validate([
+            'token' => ['nullable', 'string', 'max:512', 'required_without:endpoint'],
+            'endpoint' => ['nullable', 'string', 'max:4096', 'required_without:token'],
+        ]);
 
-        WebPushSubscription::where('user_id', $request->user()->id)
-            ->where('endpoint', $data['endpoint'])
-            ->delete();
+        if (! empty($data['token'])) {
+            PushDevice::where('user_id', $request->user()->id)->where('token', $data['token'])->delete();
+        }
+
+        if (! empty($data['endpoint'])) {
+            WebPushSubscription::where('user_id', $request->user()->id)->where('endpoint', $data['endpoint'])->delete();
+        }
 
         return response()->noContent();
     }

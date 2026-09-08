@@ -9,6 +9,19 @@ const config = {
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 let foregroundListenerStarted = false;
+const storedTokenKey = 'splitshare:fcm-token';
+
+function csrfHeaders() {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    return { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf || '', 'X-Requested-With': 'XMLHttpRequest' };
+}
+
+async function removeServerToken(token) {
+    if (!token) return;
+    await fetch(route('push-devices.destroy'), {
+        method: 'DELETE', credentials: 'same-origin', headers: csrfHeaders(), body: JSON.stringify({ token }),
+    });
+}
 
 export async function enablePushNotifications({ requestPermission = true } = {}) {
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !(await isSupported())) return 'unsupported';
@@ -24,22 +37,25 @@ export async function enablePushNotifications({ requestPermission = true } = {})
     });
     if (!token) throw new Error('No push token returned.');
 
-    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     const response = await fetch(route('push-devices.store'), {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrf || '',
-            'X-Requested-With': 'XMLHttpRequest',
-        },
+        headers: csrfHeaders(),
         body: JSON.stringify({ token }),
     });
 
     if (!response.ok) throw new Error('Could not save this device.');
+    const previousToken = localStorage.getItem(storedTokenKey);
+    localStorage.setItem(storedTokenKey, token);
+    if (previousToken && previousToken !== token) await removeServerToken(previousToken).catch(() => {});
     await startForegroundPushNotifications();
     return 'enabled';
+}
+
+export async function detachFirebaseToken() {
+    const token = localStorage.getItem(storedTokenKey);
+    if (!token) return;
+    await removeServerToken(token).catch(() => {});
 }
 
 export async function startForegroundPushNotifications() {
@@ -51,9 +67,9 @@ export async function startForegroundPushNotifications() {
     const app = getApps().length ? getApp() : initializeApp(config);
     foregroundListenerStarted = true;
     onMessage(getMessaging(app), (payload) => registration.showNotification(
-        payload.notification?.title || 'SplitShare',
+        payload.notification?.title || payload.data?.title || 'SplitShare',
         {
-            body: payload.notification?.body || '',
+            body: payload.notification?.body || payload.data?.body || '',
             data: { url: payload.data?.url || '/' },
             icon: '/icons/splitshare-192.png',
         },

@@ -4,6 +4,11 @@ function base64UrlToUint8Array(value) {
     return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
 }
 
+function csrfHeaders() {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    return { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf || '', 'X-Requested-With': 'XMLHttpRequest' };
+}
+
 export async function enablePushNotifications({ requestPermission = true } = {}) {
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported';
 
@@ -19,19 +24,24 @@ export async function enablePushNotifications({ requestPermission = true } = {})
             userVisibleOnly: true,
             applicationServerKey: base64UrlToUint8Array(vapidKey),
         });
-    const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     const response = await fetch(route('push-devices.store'), {
         method: 'POST',
         credentials: 'same-origin',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrf || '',
-            'X-Requested-With': 'XMLHttpRequest',
-        },
+        headers: csrfHeaders(),
         body: JSON.stringify({ subscription: subscription.toJSON() }),
     });
 
     if (!response.ok) throw new Error('Could not save this device.');
     return 'enabled';
+}
+
+export async function detachWebPushSubscription({ unsubscribe = false } = {}) {
+    if (!('serviceWorker' in navigator)) return;
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    const subscription = await registration?.pushManager?.getSubscription();
+    if (!subscription) return;
+    await fetch(route('push-devices.destroy'), {
+        method: 'DELETE', credentials: 'same-origin', headers: csrfHeaders(), body: JSON.stringify({ endpoint: subscription.endpoint }),
+    }).catch(() => {});
+    if (unsubscribe) await subscription.unsubscribe().catch(() => {});
 }

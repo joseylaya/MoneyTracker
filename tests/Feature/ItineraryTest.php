@@ -75,6 +75,21 @@ class ItineraryTest extends TestCase
         $this->actingAs($owner)->delete(route('trackers.itinerary.items.destroy', [$tracker, $item]))->assertNotFound();
     }
 
+    public function test_owner_can_complete_and_reopen_an_itinerary_stop(): void
+    {
+        $owner = User::factory()->create(); $tracker = $this->tracker($owner);
+        $day = ItineraryDay::create(['tracker_id' => $tracker->id, 'date' => '2027-04-10', 'route_mode' => 'driving', 'created_by' => $owner->id]);
+        $item = ItineraryItem::create(['itinerary_day_id' => $day->id, 'title' => 'Garden', 'type' => 'place', 'created_by' => $owner->id]);
+
+        $this->actingAs($owner)->patchJson(route('trackers.itinerary.items.completion', [$tracker, $item]), ['completed' => true])
+            ->assertOk()->assertJsonPath('id', $item->id);
+        $this->assertNotNull($item->fresh()->completed_at);
+        $this->assertSame($owner->id, $item->fresh()->completed_by);
+
+        $this->actingAs($owner)->patchJson(route('trackers.itinerary.items.completion', [$tracker, $item]), ['completed' => false])->assertOk();
+        $this->assertNull($item->fresh()->completed_at);
+    }
+
     public function test_route_is_derived_from_ordered_stops(): void
     {
         Http::fake(['router.project-osrm.org/*' => Http::response(['routes' => [[

@@ -15,7 +15,7 @@ class ItineraryItem extends Model
 
     protected function casts(): array
     {
-        return ['latitude' => 'float', 'longitude' => 'float'];
+        return ['latitude' => 'float', 'longitude' => 'float', 'completed_at' => 'datetime'];
     }
 
     public function day(): BelongsTo { return $this->belongsTo(ItineraryDay::class, 'itinerary_day_id'); }

@@ -1,6 +1,6 @@
 import { BellRing, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { enablePushNotifications } from '@/webPush';
+import { browserPushSupport, enableBrowserPush } from '@/browserPush';
 
 const afterLoginKey = 'splitshare:push-onboarding-after-login';
 
@@ -15,7 +15,7 @@ export default function PushNotificationOnboarding() {
         // session. This repairs rotated Firebase tokens and new deployments
         // without deleting a working device from the server.
         if (Notification.permission === 'granted') {
-            enablePushNotifications({ requestPermission: false }).catch(() => {});
+            enableBrowserPush({ requestPermission: false }).catch(() => {});
         }
 
         if (!sessionStorage.getItem(afterLoginKey)) return;
@@ -26,7 +26,7 @@ export default function PushNotificationOnboarding() {
             return;
         }
 
-        if (Notification.permission === 'default' && 'serviceWorker' in navigator && 'PushManager' in window) {
+        if (Notification.permission === 'default' && browserPushSupport() === 'idle') {
             setOpen(true);
         }
     }, []);
@@ -34,7 +34,7 @@ export default function PushNotificationOnboarding() {
     const enable = async () => {
         try {
             setState('loading');
-            const result = await enablePushNotifications();
+            const result = await enableBrowserPush();
             setState(result);
             if (result === 'enabled' || result === 'denied') setOpen(false);
         } catch {

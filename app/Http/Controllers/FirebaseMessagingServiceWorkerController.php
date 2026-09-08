@@ -25,8 +25,9 @@ messaging.onBackgroundMessage((payload) => {
   const data = payload.data || {};
   const badgeCount = Number(data.badge_count || 0);
   if (Number.isFinite(badgeCount) && self.navigator.setAppBadge) self.navigator.setAppBadge(badgeCount);
-  self.registration.showNotification(payload.notification?.title || 'SplitShare', {
-    body: payload.notification?.body || '', data: { url: data.url || '/' }, icon: '/icons/splitshare-192.png'
+  return self.registration.showNotification(payload.notification?.title || data.title || 'SplitShare', {
+    body: payload.notification?.body || data.body || '', data: { url: data.url || '/' },
+    icon: '/icons/splitshare-192.png', badge: '/icons/splitshare-192.png'
   });
 });
 self.addEventListener('notificationclick', (event) => {

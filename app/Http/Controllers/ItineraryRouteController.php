@@ -15,7 +15,9 @@ class ItineraryRouteController extends Controller
     {
         $this->authorize('view', $tracker);
         abort_unless($day->tracker_id === $tracker->id, 404);
-        $coordinates = $day->items()->whereNotNull('latitude')->whereNotNull('longitude')->get(['longitude', 'latitude'])
+        $items = $day->items()->whereNotNull('latitude')->whereNotNull('longitude');
+        if ($request->boolean('skip_completed')) $items->whereNull('completed_at');
+        $coordinates = $items->get(['longitude', 'latitude'])
             ->map(fn ($item) => $item->longitude.','.$item->latitude)->values();
         if ($request->filled(['origin_latitude', 'origin_longitude'])) {
             $origin = $request->validate([

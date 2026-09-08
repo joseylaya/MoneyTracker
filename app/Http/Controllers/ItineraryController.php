@@ -6,6 +6,7 @@ use App\Models\ItineraryDay;
 use App\Models\ItineraryItem;
 use App\Models\Tracker;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -88,7 +89,21 @@ class ItineraryController extends Controller
         return back()->with('success', 'Itinerary item deleted.');
     }
 
-    public function reorder(Request $request, Tracker $tracker): RedirectResponse
+    public function completeItem(Request $request, Tracker $tracker, ItineraryItem $item): JsonResponse
+    {
+        $this->authorize('update', $tracker);
+        $this->ensureItem($tracker, $item);
+        $data = $request->validate(['completed' => ['required', 'boolean']]);
+        $item->update([
+            'completed_at' => $data['completed'] ? now() : null,
+            'completed_by' => $data['completed'] ? $request->user()->id : null,
+            'updated_by' => $request->user()->id,
+        ]);
+
+        return response()->json(['id' => $item->id, 'completed_at' => $item->completed_at?->toISOString()]);
+    }
+
+    public function reorder(Request $request, Tracker $tracker): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $tracker);
         $data = $request->validate(['day_id' => ['required', 'uuid'], 'item_ids' => ['required', 'array'], 'item_ids.*' => ['uuid', 'distinct']]);
@@ -97,6 +112,7 @@ class ItineraryController extends Controller
         $submitted = collect($data['item_ids'])->sort()->values()->all();
         abort_unless($actual === $submitted, 422, 'Every item in the day must be included.');
         DB::transaction(fn () => collect($data['item_ids'])->each(fn ($id, $index) => ItineraryItem::whereKey($id)->update(['sort_order' => $index, 'updated_by' => $request->user()->id])));
+        if ($request->expectsJson()) return response()->json(['item_ids' => $data['item_ids']]);
         return back()->with('success', 'Itinerary reordered.');
     }
 

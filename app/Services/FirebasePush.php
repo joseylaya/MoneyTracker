@@ -35,8 +35,9 @@ class FirebasePush
                     'https://fcm.googleapis.com/v1/projects/'.config('services.firebase.project_id').'/messages:send',
                     ['message' => [
                         'token' => $deviceToken,
-                        'notification' => ['title' => $title, 'body' => $body],
-                        'data' => collect($data)->map(fn ($value) => (string) $value)->all(),
+                        // Data-only delivery lets our existing Firebase worker
+                        // display exactly one notification and own click routing.
+                        'data' => collect([...$data, 'title' => $title, 'body' => $body])->map(fn ($value) => (string) $value)->all(),
                         'webpush' => ['fcm_options' => ['link' => $data['url'] ?? config('app.url')]],
                     ]],
                 );
