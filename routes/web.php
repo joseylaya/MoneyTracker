@@ -11,6 +11,7 @@ use App\Http\Controllers\FirebaseMessagingServiceWorkerController;
 use App\Http\Controllers\PersonalFinanceController;
 use App\Http\Controllers\ItineraryController;
 use App\Http\Controllers\ItineraryRouteController;
+use App\Http\Controllers\TrackerPlanningController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -64,6 +65,12 @@ Route::middleware('auth')->group(function () {
     Route::patch('/trackers/{tracker}/restore', [TrackerController::class, 'restore'])->name('trackers.restore');
     Route::delete('/trackers/{tracker}', [TrackerController::class, 'destroy'])->name('trackers.destroy');
     Route::get('/trackers/{tracker}', [TrackerController::class, 'show'])->name('trackers.show');
+    Route::get('/trackers/{tracker}/planning', [TrackerPlanningController::class, 'index'])->name('trackers.planning.index');
+    Route::post('/trackers/{tracker}/tasks', [TrackerPlanningController::class, 'storeTask'])->name('trackers.tasks.store');
+    Route::patch('/trackers/{tracker}/tasks/{task}/toggle', [TrackerPlanningController::class, 'toggleTask'])->name('trackers.tasks.toggle');
+    Route::delete('/trackers/{tracker}/tasks/{task}', [TrackerPlanningController::class, 'destroyTask'])->name('trackers.tasks.destroy');
+    Route::post('/trackers/{tracker}/planned-expenses', [TrackerPlanningController::class, 'storePlannedExpense'])->name('trackers.planned-expenses.store');
+    Route::delete('/trackers/{tracker}/planned-expenses/{plannedExpense}', [TrackerPlanningController::class, 'destroyPlannedExpense'])->name('trackers.planned-expenses.destroy');
     Route::get('/trackers/{tracker}/itinerary', [ItineraryController::class, 'index'])->name('trackers.itinerary.index');
     Route::post('/trackers/{tracker}/itinerary/days', [ItineraryController::class, 'storeDay'])->name('trackers.itinerary.days.store');
     Route::patch('/trackers/{tracker}/itinerary/days/{day}', [ItineraryController::class, 'updateDay'])->name('trackers.itinerary.days.update');

@@ -174,6 +174,17 @@ class TrackerWorkflowsTest extends TestCase
         $this->assertNotNull($membership->fresh()->last_read_chat_at);
     }
 
+    public function test_conversation_includes_the_current_user_name_for_realtime_typing_presence(): void
+    {
+        $owner = User::factory()->create(['name' => 'Jose']);
+        $tracker = $this->tracker($owner);
+
+        $this->actingAs($owner)->get(route('trackers.conversation.index', $tracker))->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->component('Trackers/Conversation')
+            ->where('currentUserId', $owner->id)
+            ->where('currentUserName', 'Jose'));
+    }
+
     public function test_chat_settlement_only_changes_balances_after_the_recipient_approves(): void
     {
         $owner = User::factory()->create(); $member = User::factory()->create(); $tracker = $this->tracker($owner);

@@ -46,6 +46,7 @@ class TrackerConversationController extends Controller
             'messages' => $messages->map(fn ($message) => $this->messageData($message, $request->user()->id)),
             'hasMoreMessages' => $hasMoreMessages,
             'currentUserId' => $request->user()->id,
+            'currentUserName' => $request->user()->name,
             'canChat' => $request->user()->can('chat', $tracker),
             'settlementOptions' => collect($finance->directDebts($tracker))->where('from_user_id', $request->user()->id)->map(fn ($debt) => ['to_user_id' => $debt['to_user_id'], 'to_name' => $members->get($debt['to_user_id'])['name'] ?? 'Member', 'amount_minor' => $debt['amount_minor']])->values(),
         ]);

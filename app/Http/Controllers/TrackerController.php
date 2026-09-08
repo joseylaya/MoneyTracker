@@ -135,6 +135,10 @@ class TrackerController extends Controller
             ->concat($requestHistory)
             ->sortByDesc(fn (array $item) => $item['date'].' '.$item['created_at'])
             ->values();
+        $tasks = $tracker->tasks()->with(['assignee:id,name', 'completedBy:id,name'])
+            ->orderByRaw('completed_at is not null')->orderBy('created_at')->get();
+        $plannedExpenses = $tracker->plannedExpenses()->with('assignee:id,name')
+            ->orderBy('expected_date')->orderBy('created_at')->get();
         return Inertia::render('Trackers/Show', [
             'tracker' => $tracker,
             'membership' => ['role' => $membership->role, 'can_manage_members' => $request->user()->can('manageMembers', $tracker), 'can_manage_finances' => $request->user()->can('update', $tracker), 'can_settle' => $request->user()->can('settle', $tracker), 'can_manage_lifecycle' => $request->user()->can('manageLifecycle', $tracker)],
@@ -146,6 +150,8 @@ class TrackerController extends Controller
             'unreadMessagesCount' => $unreadMessagesCount,
             'unreadNotificationsCount' => $tracker->notifications()->where('user_id', $request->user()->id)->whereNull('dismissed_at')->whereNull('read_at')->count(),
             'personalTransactions' => $personalTransactions,
+            'tasks' => $tasks,
+            'plannedExpenses' => $plannedExpenses,
         ]);
     }
 

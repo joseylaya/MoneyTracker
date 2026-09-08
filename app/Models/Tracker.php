@@ -22,4 +22,6 @@ class Tracker extends Model
     public function settlementRequests(): HasMany { return $this->hasMany(TrackerSettlementRequest::class); }
     public function notifications(): HasMany { return $this->hasMany(TrackerNotification::class); }
     public function itineraryDays(): HasMany { return $this->hasMany(ItineraryDay::class)->orderBy('date')->orderBy('sort_order'); }
+    public function tasks(): HasMany { return $this->hasMany(TrackerTask::class); }
+    public function plannedExpenses(): HasMany { return $this->hasMany(TrackerPlannedExpense::class); }
 }
