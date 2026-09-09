@@ -52,6 +52,34 @@ class ItineraryTest extends TestCase
         $this->actingAs($viewer)->post(route('trackers.itinerary.days.store', $tracker), ['date' => '2027-04-10', 'route_mode' => 'walking'])->assertForbidden();
     }
 
+    public function test_member_can_open_a_dedicated_navigation_page_for_a_tracker_day(): void
+    {
+        $owner = User::factory()->create();
+        $tracker = $this->tracker($owner);
+        $day = ItineraryDay::create(['tracker_id' => $tracker->id, 'date' => '2027-04-10', 'route_mode' => 'driving', 'created_by' => $owner->id]);
+        ItineraryItem::create(['itinerary_day_id' => $day->id, 'title' => 'Airport', 'type' => 'transport', 'latitude' => 35.7720, 'longitude' => 140.3929, 'created_by' => $owner->id]);
+
+        $this->actingAs($owner)->get(route('trackers.itinerary.navigate', [$tracker, $day]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Itinerary/Navigate')
+                ->where('tracker.id', $tracker->id)
+                ->where('day.id', $day->id)
+                ->has('day.items', 1)
+                ->where('canManage', true));
+    }
+
+    public function test_navigation_page_rejects_a_day_from_another_tracker(): void
+    {
+        $owner = User::factory()->create();
+        $tracker = $this->tracker($owner);
+        $otherOwner = User::factory()->create();
+        $other = $this->tracker($otherOwner);
+        $otherDay = ItineraryDay::create(['tracker_id' => $other->id, 'date' => '2027-05-01', 'route_mode' => 'walking', 'created_by' => $otherOwner->id]);
+
+        $this->actingAs($owner)->get(route('trackers.itinerary.navigate', [$tracker, $otherDay]))->assertNotFound();
+    }
+
     public function test_reorder_requires_and_updates_the_complete_day(): void
     {
         $owner = User::factory()->create(); $tracker = $this->tracker($owner);

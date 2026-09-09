@@ -5,12 +5,14 @@ import TrackerPlanningSummary from '@/Components/TrackerPlanningSummary';
 import { money, shortDate } from '@/utils/money';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Archive, ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, MessageCircle, ReceiptText, Share2, Trash2, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const category = ['🍴', '🛒', '⛽', '🎬'];
 export default function Show({ tracker, membership, members, expenses, myExpenseTotalMinor, debts, currentUserId, unreadMessagesCount, unreadNotificationsCount, personalTransactions = [], tasks = [], plannedExpenses = [] }) {
     const [tab, setTab] = useState('transactions'); const { flash } = usePage().props;
     const [unreadMessages, setUnreadMessages] = useState(unreadMessagesCount);
+    const [typingUsers, setTypingUsers] = useState({});
+    const typingExpiryTimers = useRef(new Map());
     const [sharing, setSharing] = useState(false);
     const myExpenses = useMemo(() => expenses.filter((expense) => Number(expense.paid_by_user_id) === Number(currentUserId)), [expenses, currentUserId]);
     const ownBalance = members.find((member) => member.id === currentUserId)?.balance_minor || 0;
@@ -21,9 +23,34 @@ export default function Show({ tracker, membership, members, expenses, myExpense
         const channel = window.Echo.private(`tracker.${tracker.id}`);
         channel.listen('.tracker.message.created', ({ message }) => {
             if (message.author.id !== currentUserId) setUnreadMessages((count) => count + 1);
+            const key = String(message.author.id);
+            if (typingExpiryTimers.current.has(key)) window.clearTimeout(typingExpiryTimers.current.get(key));
+            typingExpiryTimers.current.delete(key);
+            setTypingUsers((current) => { const next = { ...current }; delete next[key]; return next; });
         });
-        return () => window.Echo.leave(`private-tracker.${tracker.id}`);
+        channel.listenForWhisper('typing', ({ userId, name, typing }) => {
+            if (!userId || Number(userId) === Number(currentUserId)) return;
+            const key = String(userId);
+            if (typingExpiryTimers.current.has(key)) window.clearTimeout(typingExpiryTimers.current.get(key));
+            typingExpiryTimers.current.delete(key);
+            setTypingUsers((current) => {
+                const next = { ...current };
+                if (typing) next[key] = name || 'Someone'; else delete next[key];
+                return next;
+            });
+            if (typing) typingExpiryTimers.current.set(key, window.setTimeout(() => {
+                setTypingUsers((current) => { const next = { ...current }; delete next[key]; return next; });
+                typingExpiryTimers.current.delete(key);
+            }, 3500));
+        });
+        return () => {
+            typingExpiryTimers.current.forEach((timer) => window.clearTimeout(timer));
+            typingExpiryTimers.current.clear();
+            window.Echo.leave(`private-tracker.${tracker.id}`);
+        };
     }, [tracker.id, currentUserId]);
+    const typingNames = Object.values(typingUsers);
+    const typingText = typingNames.length === 1 ? `${typingNames[0]} is typing` : typingNames.length === 2 ? `${typingNames[0]} and ${typingNames[1]} are typing` : typingNames.length > 2 ? `${typingNames[0]} and ${typingNames.length - 1} others are typing` : '';
     const archive = () => { if (window.confirm(`Archive ${tracker.name}? Its history will be kept, but no one can add expenses, members, or messages until you restore it.`)) router.patch(route('trackers.archive', tracker.id)); };
     const destroy = () => { if (window.confirm(`Delete ${tracker.name}? It will be removed from everyone’s tracker list.`)) router.delete(route('trackers.destroy', tracker.id)); };
     const destroyExpense = (expense) => { if (window.confirm(`Delete ${expense.description}? It will be removed from the trip and balances will be recalculated.`)) router.delete(route('trackers.expenses.destroy', [tracker.id, expense.id])); };
@@ -48,7 +75,7 @@ export default function Show({ tracker, membership, members, expenses, myExpense
             <Link href={route('trackers.itinerary.index', tracker.id)} className="mt-4 flex items-center gap-4 rounded-[1.45rem] border border-[#c8f1d8] bg-white px-5 py-4 shadow-[0_3px_10px_rgba(15,23,42,.035)] transition hover:border-[#8ce4af] hover:bg-[#f9fffb]"><span className="flex size-11 items-center justify-center rounded-2xl bg-[#e8faef] text-[#16b85b]"><CalendarDays size={21}/></span><span className="min-w-0 flex-1"><span className="block font-display text-lg font-bold text-slate-900">Itinerary</span><span className="mt-0.5 block text-sm text-slate-500">Plan days, places, activities, and trip stops</span></span><ChevronRight size={20} className="shrink-0 text-[#26bf67]"/></Link>
             <Link href={route('trackers.conversation.index', tracker.id)} className="mt-4 flex items-center gap-4 rounded-[1.45rem] border border-[#c8f1d8] bg-white px-5 py-4 shadow-[0_3px_10px_rgba(15,23,42,.035)] transition hover:border-[#8ce4af] hover:bg-[#f9fffb]">
                 <span className="relative flex size-11 items-center justify-center rounded-2xl bg-[#e8faef] text-[#16b85b]"><MessageCircle size={21}/>{unreadMessages > 0 && <span className="absolute -right-2 -top-2 flex min-w-5 items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1 text-[10px] font-bold leading-5 text-white" aria-label={`${unreadMessages} unread messages`}>{unreadMessages > 99 ? '99+' : unreadMessages}</span>}</span>
-                <span className="min-w-0 flex-1"><span className="block font-display text-lg font-bold text-slate-900">Conversation</span><span className="mt-0.5 block truncate text-sm text-slate-500">Message everyone in this tracker{unreadNotificationsCount > 0 ? ` · ${unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount} new updates` : ''}</span></span>
+                <span className="min-w-0 flex-1"><span className="block font-display text-lg font-bold text-slate-900">Conversation</span>{typingText ? <span className="mt-1 flex min-w-0 items-center gap-2 text-sm font-semibold text-[#159b4c]" aria-live="polite" aria-label={`${typingText}…`}><span className="flex shrink-0 items-center gap-1 rounded-full bg-[#e5f9ed] px-2.5 py-2" aria-hidden="true">{[0, 1, 2].map((dot) => <span key={dot} className="size-1.5 rounded-full bg-[#17ad55] motion-safe:animate-bounce" style={{ animationDelay: `${dot * 140}ms`, animationDuration: '900ms' }}/>)}</span><span className="truncate">{typingText}…</span></span> : <span className="mt-0.5 block truncate text-sm text-slate-500">Message everyone in this tracker{unreadNotificationsCount > 0 ? ` · ${unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount} new updates` : ''}</span>}</span>
                 <span className="flex items-center gap-2"><span className="text-xs font-bold text-rose-500">{unreadMessages > 0 ? `${unreadMessages > 99 ? '99+' : unreadMessages} new` : ''}</span><ChevronRight size={20} className="shrink-0 text-[#26bf67]"/></span>
             </Link>
             <div className="mt-7 flex overflow-x-auto border-b border-slate-200"><button onClick={() => setTab('transactions')} className={`min-w-28 flex-1 border-b-2 px-2 py-4 text-[10px] font-bold uppercase tracking-[.1em] sm:text-xs ${tab === 'transactions' ? 'border-[#2ecc70] text-[#16b85b]' : 'border-transparent text-slate-400'}`}>Transactions</button><button onClick={() => setTab('balances')} className={`min-w-24 flex-1 border-b-2 px-2 py-4 text-[10px] font-bold uppercase tracking-[.1em] sm:text-xs ${tab === 'balances' ? 'border-[#2ecc70] text-[#16b85b]' : 'border-transparent text-slate-400'}`}>Balances</button><button onClick={() => setTab('personal')} className={`min-w-28 flex-1 border-b-2 px-2 py-4 text-[10px] font-bold uppercase tracking-[.1em] sm:text-xs ${tab === 'personal' ? 'border-[#2ecc70] text-[#16b85b]' : 'border-transparent text-slate-400'}`}>My Activity</button><button onClick={() => setTab('mine')} className={`min-w-28 flex-1 border-b-2 px-2 py-4 text-[10px] font-bold uppercase tracking-[.1em] sm:text-xs ${tab === 'mine' ? 'border-[#2ecc70] text-[#16b85b]' : 'border-transparent text-slate-400'}`}>My Expenses</button></div>

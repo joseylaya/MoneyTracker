@@ -4,7 +4,7 @@ import { Check, CheckCircle2, ChevronRight, ChevronUp, Compass, GripVertical, Lo
 import { router } from '@inertiajs/react';
 import { createPortal } from 'react-dom';
 
-export default function DayMap({ trackerId, day, canManage = false }) {
+export default function DayMap({ trackerId, day, canManage = false, navigationHref = null, navigationOnly = false, backHref = null }) {
     const container = useRef(null);
     const mapRef = useRef(null);
     const routeCoordinatesRef = useRef([]);
@@ -32,7 +32,7 @@ export default function DayMap({ trackerId, day, canManage = false }) {
     const cardPositionsRef = useRef(new Map());
     const [summary, setSummary] = useState(null);
     const [routeUnavailable, setRouteUnavailable] = useState(false);
-    const [navigating, setNavigating] = useState(false);
+    const [navigating, setNavigating] = useState(navigationOnly);
     const [paused, setPaused] = useState(false);
     const [headingUp, setHeadingUp] = useState(true);
     const [sheetExpanded, setSheetExpanded] = useState(false);
@@ -65,13 +65,16 @@ export default function DayMap({ trackerId, day, canManage = false }) {
     useEffect(() => {
         if (!navigating) return undefined;
         const previousOverflow = document.body.style.overflow;
+        const previousOverscroll = document.documentElement.style.overscrollBehavior;
         document.body.style.overflow = 'hidden';
+        document.documentElement.style.overscrollBehavior = 'none';
         const frame = window.requestAnimationFrame(() => {
             if (mapRef.current && window.google?.maps) window.google.maps.event.trigger(mapRef.current, 'resize');
         });
         return () => {
             window.cancelAnimationFrame(frame);
             document.body.style.overflow = previousOverflow;
+            document.documentElement.style.overscrollBehavior = previousOverscroll;
         };
     }, [navigating]);
 
@@ -310,6 +313,10 @@ export default function DayMap({ trackerId, day, canManage = false }) {
     };
 
     const startNavigation = () => {
+        if (navigationHref && !navigationOnly) {
+            router.visit(navigationHref);
+            return;
+        }
         setNavigationError('');
         if (!navigator.geolocation) { setNavigationError('Live location is not supported by this browser.'); return; }
         if (!routeCoordinatesRef.current.length) { setNavigationError('Wait for the route to finish loading.'); return; }
@@ -338,6 +345,7 @@ export default function DayMap({ trackerId, day, canManage = false }) {
         setNavigating(false);
         setPaused(false);
         setNavigation(null);
+        if (navigationOnly && backHref) router.visit(backHref, { preserveScroll: true });
     };
 
     const togglePause = () => {
@@ -460,6 +468,7 @@ export default function DayMap({ trackerId, day, canManage = false }) {
 
     const startItemDrag = (item, event) => {
         if (!canManage) return;
+        event.stopPropagation();
         const card = event.currentTarget.closest('[data-itinerary-stop]');
         const rect = card.getBoundingClientRect();
         dragPointerRef.current = { id: item.id, startY: event.clientY, offsetY: event.clientY - rect.top, left: rect.left, width: rect.width, active: false };
@@ -472,6 +481,7 @@ export default function DayMap({ trackerId, day, canManage = false }) {
         const drag = dragPointerRef.current;
         if (!drag) return;
         event.preventDefault();
+        event.stopPropagation();
         if (!drag.active && Math.abs(event.clientY - drag.startY) < 6) return;
         if (!drag.active) {
             drag.active = true;
@@ -505,7 +515,6 @@ export default function DayMap({ trackerId, day, canManage = false }) {
             });
             if (!response.ok) throw new Error('Unable to reorder itinerary');
             setCommittedOrderKey(itemIds.join('|'));
-            router.reload({ only: ['days'], preserveState: true, preserveScroll: true });
         } catch (error) {
             const original = originalOrderRef.current || day.items;
             orderedItemsRef.current = original;
@@ -535,41 +544,46 @@ export default function DayMap({ trackerId, day, canManage = false }) {
     const speed = navigation?.speed >= 0 ? `${Math.round(navigation.speed * 3.6)}` : '—';
     const itineraryIcons = { activity: '🎯', food: '🍜', accommodation: '🏨', transport: '🚆', shopping: '🛍️', place: '📍', other: '📝' };
 
-    return <div className={navigating ? 'fixed inset-0 z-[100] overflow-hidden bg-slate-100 text-slate-950' : 'mt-6 overflow-hidden rounded-[1.65rem] border border-slate-200 bg-white'}>
+    return <div className={navigating ? 'fixed inset-x-0 top-0 z-[100] h-[100dvh] overflow-hidden overscroll-none bg-slate-100 text-slate-950' : 'mt-6 overflow-hidden rounded-[1.65rem] border border-slate-200 bg-white shadow-[0_14px_38px_rgba(15,23,42,.08)]'}>
         {navigating ? <>
-            <button type="button" onClick={stopNavigation} className="absolute left-3 top-[max(.75rem,env(safe-area-inset-top))] z-30 flex size-12 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg transition active:scale-95 sm:left-6" aria-label="Close navigation"><X size={23}/></button>
-            <div className="absolute inset-x-0 top-0 z-20 pl-[4.5rem] pr-3 pt-[max(.75rem,env(safe-area-inset-top))] sm:px-24">
-                <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-[1.75rem] bg-[#173f2a] p-3 text-white shadow-[0_14px_34px_rgba(15,23,42,.3)] sm:p-4">
-                    <div className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-[#20b960] text-white"><ChevronRight size={42} strokeWidth={3}/></div>
-                    <div className="min-w-0 flex-1"><p className="font-display text-2xl font-bold leading-none sm:text-3xl">{navigation?.arrived ? 'Arrived' : navigationDistance || 'Locating…'}</p><p className="mt-2 truncate text-base font-semibold text-slate-100">{navigation?.offRoute ? 'Returning to the route' : navigation?.arrived ? nextStop?.title : `Continue to ${nextStop?.title || 'next stop'}`}</p></div>
+            <button type="button" onClick={stopNavigation} className="absolute left-3 top-[calc(env(safe-area-inset-top)+.75rem)] z-30 flex size-11 items-center justify-center rounded-2xl border border-white/70 bg-white text-slate-800 shadow-[0_8px_28px_rgba(15,23,42,.25)] transition active:scale-95 sm:left-6 sm:size-12" aria-label="Close navigation"><X size={22}/></button>
+            <div className="absolute inset-x-0 top-0 z-20 pl-[4.25rem] pr-3 pt-[calc(env(safe-area-inset-top)+.75rem)] sm:px-24">
+                <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-[1.4rem] border border-white/10 bg-[#173f2a]/95 p-3 text-white shadow-[0_14px_34px_rgba(15,23,42,.3)] backdrop-blur sm:rounded-[1.75rem] sm:p-4">
+                    <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#20b960] text-white sm:size-16 sm:rounded-2xl"><ChevronRight className="size-8 sm:size-10" strokeWidth={3}/></div>
+                    <div className="min-w-0 flex-1"><p className="font-display text-xl font-bold leading-none sm:text-3xl">{navigation?.arrived ? 'Arrived' : navigationDistance || 'Locating…'}</p><p className="mt-1.5 truncate text-sm font-semibold text-slate-100 sm:mt-2 sm:text-base">{navigation?.offRoute ? 'Returning to the route' : navigation?.arrived ? nextStop?.title : `Continue to ${nextStop?.title || 'next stop'}`}</p></div>
                     <div className="hidden shrink-0 text-right sm:block"><p className="text-xs font-semibold uppercase tracking-wider text-slate-300">Speed</p><p className="mt-1 text-xl font-bold">{speed} <span className="text-xs">km/h</span></p></div>
                 </div>
             </div>
         </> : <>
-            <div className="flex items-center justify-between gap-3 px-5 py-4"><div><h3 className="font-display text-lg font-bold">Day route</h3><p className="text-xs text-slate-500">{summary ? `${distance} · ${duration}` : routeUnavailable ? 'Stops shown · route temporarily unavailable' : stops.length > 1 ? 'Calculating route…' : 'Add another mapped stop to calculate a route'}</p></div><span className="rounded-full bg-[#eafaf1] px-3 py-1.5 text-xs font-bold capitalize text-[#10994a]">{day.route_mode === 'walking' ? 'Walking' : 'Driving'}</span></div>
-            {summary && <div className="border-y border-slate-200 bg-slate-50 px-5 py-3"><button type="button" onClick={startNavigation} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#20b960] px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#169c4e]"><Navigation size={18} fill="currentColor"/>Start navigation</button>{navigationError && <p className="mt-2 text-center text-xs font-semibold text-red-600">{navigationError}</p>}</div>}
+            <div className="flex items-center justify-between gap-3 px-5 py-4"><div><p className="text-[11px] font-bold uppercase tracking-[.14em] text-[#16a653]">Mapped itinerary</p><h3 className="mt-1 font-display text-xl font-bold">Day route</h3><p className="mt-1 text-sm text-slate-500">{summary ? `${distance} · ${duration} · ${stops.length} stops` : routeUnavailable ? 'Stops shown · route temporarily unavailable' : stops.length > 1 ? 'Calculating the best route…' : 'Add another mapped stop to calculate a route'}</p></div><span className="rounded-full bg-[#eafaf1] px-3 py-1.5 text-xs font-bold capitalize text-[#10994a]">{day.route_mode === 'walking' ? 'Walking' : 'Driving'}</span></div>
+            {summary && <div className="border-y border-slate-200 bg-[#f7fbf8] px-4 py-3"><button type="button" onClick={startNavigation} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#179f50] px-4 py-3 text-base font-bold text-white shadow-[0_8px_20px_rgba(23,159,80,.22)] transition active:scale-[.99] hover:bg-[#138a45]"><Navigation size={19} fill="currentColor"/>Start navigation</button>{navigationError && <p className="mt-2 text-center text-xs font-semibold text-red-600">{navigationError}</p>}</div>}
         </>}
 
         <div className={navigating ? 'contents' : 'relative'}>
             <div ref={container} className={navigating ? 'absolute inset-0 h-full w-full bg-slate-100' : 'h-[360px] w-full bg-slate-100'} aria-label={`Google map of ${stops.length} itinerary stops`}/>
-            {!navigating && <div className="absolute right-3 top-3 z-20 flex flex-col gap-2">
-                <button type="button" onClick={recenter} className="flex size-12 items-center justify-center rounded-full bg-white text-[#13a856] shadow-[0_5px_18px_rgba(15,23,42,.22)] transition active:scale-95" aria-label="Recenter map on my location" title="My location"><LocateFixed size={22}/></button>
-                {routeCoordinatesRef.current.length > 0 && <button type="button" onClick={showOverview} className="flex size-12 items-center justify-center rounded-full bg-white text-slate-700 shadow-[0_5px_18px_rgba(15,23,42,.22)] transition active:scale-95" aria-label="Fit the full route on the map" title="Route overview"><Route size={21}/></button>}
+            {!navigating && <div className="absolute right-3 top-3 z-20 flex flex-col items-end gap-2">
+                <button type="button" onClick={recenter} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/80 bg-white/95 px-3 font-semibold text-[#137f43] shadow-[0_5px_18px_rgba(15,23,42,.22)] backdrop-blur transition active:scale-95" aria-label="Recenter map on my location" title="My location"><LocateFixed size={20}/><span className="text-xs">My location</span></button>
+                {routeCoordinatesRef.current.length > 0 && <button type="button" onClick={showOverview} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/80 bg-white/95 px-3 font-semibold text-slate-700 shadow-[0_5px_18px_rgba(15,23,42,.22)] backdrop-blur transition active:scale-95" aria-label="Fit the full route on the map" title="Route overview"><Route size={19}/><span className="text-xs">Full route</span></button>}
             </div>}
         </div>
 
         {navigating ? <>
-            <div className="absolute right-3 top-[9.25rem] z-20 flex flex-col gap-2 sm:right-6 sm:top-[10rem]">
+            <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+7.25rem)] z-20 flex flex-col gap-2 sm:right-6 sm:top-[10rem]">
                 <button type="button" onClick={recenter} className="flex size-12 items-center justify-center rounded-full bg-white text-[#13a856] shadow-lg" aria-label="Recenter map"><LocateFixed size={22}/></button>
                 <button type="button" onClick={showOverview} className="flex size-12 items-center justify-center rounded-full bg-white text-slate-700 shadow-lg" aria-label="Show route overview"><Route size={21}/></button>
                 <button type="button" onClick={toggleOrientation} className={`relative flex size-12 items-center justify-center rounded-full shadow-lg transition ${headingUp ? 'bg-[#173f2a] text-white' : 'bg-white text-slate-700'}`} aria-label={headingUp ? 'Switch to north-up map' : 'Switch to heading-up map'} title={headingUp ? 'Heading up' : 'North up'}><Compass size={23} style={{ transform: headingUp ? `rotate(${-lastHeadingRef.current}deg)` : 'rotate(0deg)' }} className="transition-transform"/><span className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full bg-white text-[9px] font-black text-[#138a48] shadow">{headingUp ? '↑' : 'N'}</span></button>
             </div>
-            <div className="absolute inset-x-0 bottom-0 z-20 sm:px-6 sm:pb-[max(.75rem,env(safe-area-inset-bottom))]">
-                <div className="mx-auto max-h-[calc(100dvh-9rem)] max-w-3xl overflow-y-auto rounded-t-[2rem] bg-white px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5 shadow-[0_-10px_40px_rgba(15,23,42,.18)] sm:rounded-[2rem] sm:p-6">
+            <div className="absolute inset-x-0 bottom-0 z-20 pb-[env(safe-area-inset-bottom)] sm:px-6 sm:pb-[max(.75rem,env(safe-area-inset-bottom))]">
+                <div className="mx-auto max-h-[calc(100dvh-env(safe-area-inset-top)-8.25rem-env(safe-area-inset-bottom))] max-w-3xl overflow-y-auto overscroll-contain rounded-t-[2rem] border-t border-slate-200 bg-white px-4 pb-4 pt-4 shadow-[0_-10px_40px_rgba(15,23,42,.22)] sm:rounded-[2rem] sm:p-6">
                     <button type="button" onClick={toggleSheet} onPointerDown={startSheetDrag} onPointerUp={finishSheetDrag} className="-mx-2 -mt-2 flex w-[calc(100%+1rem)] touch-none items-center justify-between gap-3 rounded-2xl px-2 py-2 text-left" aria-expanded={sheetExpanded} aria-label={sheetExpanded ? 'Collapse route details' : 'Expand route details'}>
                         <div><p className="font-display text-3xl font-bold leading-none sm:text-4xl">{arrivalTime}</p><p className="mt-1.5 text-sm font-semibold text-slate-500">Estimated arrival</p></div>
                         <div className="flex items-center gap-2"><span className="rounded-full bg-indigo-100 px-3 py-1.5 text-sm font-bold text-indigo-700">{navigationDuration || duration}</span><span className="text-lg font-semibold text-slate-700">{navigationDistance || distance}</span><ChevronUp size={22} className={`ml-1 text-slate-400 transition-transform duration-300 ${sheetExpanded ? 'rotate-180' : ''}`}/></div>
                     </button>
+                    <div className="sticky top-0 z-10 mt-3 grid grid-cols-3 gap-2 rounded-2xl bg-white pb-1 sm:gap-3">
+                        <button type="button" onClick={showOverview} className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-[#eaf1ff] px-1 text-xs font-bold text-slate-800 sm:min-h-14 sm:gap-2 sm:rounded-2xl sm:px-2 sm:text-sm"><MapIcon size={18}/>Overview</button>
+                        <button type="button" onClick={togglePause} className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-[#eaf1ff] px-1 text-xs font-bold text-slate-800 sm:min-h-14 sm:gap-2 sm:rounded-2xl sm:px-2 sm:text-sm">{paused ? <Play size={18}/> : <Pause size={18}/>} {paused ? 'Resume' : 'Pause'}</button>
+                        <button type="button" onClick={stopNavigation} className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-red-100 px-1 text-xs font-bold text-red-700 sm:min-h-14 sm:gap-2 sm:rounded-2xl sm:px-2 sm:text-sm"><X size={18}/>End</button>
+                    </div>
                     <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${sheetExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}><div className="overflow-hidden">
                         <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#20b960] transition-all" style={{ width: `${summary?.distance && navigation ? Math.max(5, Math.min(100, 100 - (navigation.remainingMeters / summary.distance * 100))) : 5}%` }}/></div>
                         <div className="mt-3 flex items-center justify-between gap-3 text-sm"><p className="min-w-0 truncate font-semibold text-slate-600"><span className="mr-2 inline-block size-2.5 rounded-full bg-[#20b960]"/>{paused ? 'Navigation paused' : navigation?.offRoute ? 'Rerouting…' : 'Live route active'}</p><p className="shrink-0 font-semibold text-[#138a48]">Next: {nextStop?.title}</p></div>
@@ -589,11 +603,6 @@ export default function DayMap({ trackerId, day, canManage = false }) {
                             })}</div>
                         </div>
                     </div></div>
-                    <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
-                        <button type="button" onClick={showOverview} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-[#eaf1ff] px-2 text-sm font-bold text-slate-800"><MapIcon size={19}/>Overview</button>
-                        <button type="button" onClick={togglePause} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-[#eaf1ff] px-2 text-sm font-bold text-slate-800">{paused ? <Play size={19}/> : <Pause size={19}/>} {paused ? 'Resume' : 'Pause'}</button>
-                        <button type="button" onClick={stopNavigation} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-red-100 px-2 text-sm font-bold text-red-700"><X size={19}/>Exit</button>
-                    </div>
                 </div>
             </div>
         </> : <>

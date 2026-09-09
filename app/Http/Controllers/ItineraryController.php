@@ -29,6 +29,21 @@ class ItineraryController extends Controller
         ]);
     }
 
+    public function navigate(Request $request, Tracker $tracker, ItineraryDay $day): Response
+    {
+        $this->authorize('view', $tracker);
+        $this->ensureDay($tracker, $day);
+        $day->load(['items.expenses' => fn ($query) => $query
+            ->select('id', 'itinerary_item_id', 'description', 'amount_minor', 'paid_by_user_id')
+            ->with('payer:id,name')]);
+
+        return Inertia::render('Itinerary/Navigate', [
+            'tracker' => $tracker,
+            'day' => $day,
+            'canManage' => $request->user()->can('update', $tracker),
+        ]);
+    }
+
     public function storeDay(Request $request, Tracker $tracker): RedirectResponse
     {
         $this->authorize('update', $tracker);

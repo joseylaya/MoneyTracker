@@ -87,7 +87,9 @@ export default function Index({ tracker, days, canManage }) {
                             </div></article>)}
                         {selected.items.length === 0 && <div className="relative rounded-[1.5rem] border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">Nothing planned for this day yet.</div>}</div>
                     {canManage && <button onClick={() => setModal({ type: 'item', day: selected })} className="ss-button mt-5 w-full gap-2"><Plus size={18}/>Add itinerary item</button>}
-                    {selected.items.some((item) => item.latitude != null) && <DayMap trackerId={tracker.id} day={selected} canManage={canManage}/>}
+                    {selected.items.some((item) => item.latitude != null) && (
+                        <DayMap trackerId={tracker.id} day={selected} canManage={canManage} navigationHref={route('trackers.itinerary.navigate', [tracker.id, selected.id])}/>
+                    )}
                 </section>}
             </>}
         </div>

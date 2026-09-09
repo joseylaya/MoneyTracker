@@ -72,6 +72,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/trackers/{tracker}/planned-expenses', [TrackerPlanningController::class, 'storePlannedExpense'])->name('trackers.planned-expenses.store');
     Route::delete('/trackers/{tracker}/planned-expenses/{plannedExpense}', [TrackerPlanningController::class, 'destroyPlannedExpense'])->name('trackers.planned-expenses.destroy');
     Route::get('/trackers/{tracker}/itinerary', [ItineraryController::class, 'index'])->name('trackers.itinerary.index');
+    Route::get('/trackers/{tracker}/itinerary/days/{day}/navigate', [ItineraryController::class, 'navigate'])->name('trackers.itinerary.navigate');
     Route::post('/trackers/{tracker}/itinerary/days', [ItineraryController::class, 'storeDay'])->name('trackers.itinerary.days.store');
     Route::patch('/trackers/{tracker}/itinerary/days/{day}', [ItineraryController::class, 'updateDay'])->name('trackers.itinerary.days.update');
     Route::delete('/trackers/{tracker}/itinerary/days/{day}', [ItineraryController::class, 'destroyDay'])->name('trackers.itinerary.days.destroy');
