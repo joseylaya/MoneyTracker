@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ProfileTest extends TestCase
@@ -61,6 +63,45 @@ class ProfileTest extends TestCase
             ->assertRedirect('/profile');
 
         $this->assertNotNull($user->refresh()->email_verified_at);
+    }
+
+    public function test_profile_photo_is_resized_and_stored_only_as_webp(): void
+    {
+        config(['filesystems.profile_photos_disk' => 'public']);
+        Storage::fake('public');
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('profile.photo.update'), [
+            'photo' => UploadedFile::fake()->image('large-photo.png', 1200, 800)->size(900),
+        ])->assertSessionHasNoErrors()->assertRedirect(route('profile.edit'));
+
+        $user->refresh();
+        $this->assertNotNull($user->avatar_path);
+        $this->assertStringEndsWith('.webp', $user->avatar_path);
+        Storage::disk('public')->assertExists($user->avatar_path);
+        $contents = Storage::disk('public')->get($user->avatar_path);
+        $this->assertSame('RIFF', substr($contents, 0, 4));
+        $this->assertSame('WEBP', substr($contents, 8, 4));
+        [$width, $height] = getimagesizefromstring($contents);
+        $this->assertLessThanOrEqual(512, max($width, $height));
+        $this->assertLessThanOrEqual(250 * 1024, strlen($contents));
+    }
+
+    public function test_profile_photo_rejects_unsupported_files_and_can_be_removed(): void
+    {
+        config(['filesystems.profile_photos_disk' => 'public']);
+        Storage::fake('public');
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('profile.photo.update'), [
+            'photo' => UploadedFile::fake()->create('avatar.gif', 20, 'image/gif'),
+        ])->assertSessionHasErrors('photo');
+
+        Storage::disk('public')->put('profile-photos/existing.webp', 'old');
+        $user->forceFill(['avatar_path' => 'profile-photos/existing.webp'])->save();
+        $this->actingAs($user)->delete(route('profile.photo.destroy'))->assertRedirect(route('profile.edit'));
+        $this->assertNull($user->refresh()->avatar_path);
+        Storage::disk('public')->assertMissing('profile-photos/existing.webp');
     }
 
     public function test_user_can_delete_their_account(): void

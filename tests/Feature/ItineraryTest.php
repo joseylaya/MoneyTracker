@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Events\TrackerLiveLocationUpdated;
 use App\Models\ItineraryDay;
 use App\Models\ItineraryItem;
 use App\Models\Tracker;
 use App\Models\TrackerMember;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -19,6 +21,7 @@ class ItineraryTest extends TestCase
     {
         $tracker = Tracker::create(['name' => 'Japan 2027', 'currency_code' => 'PHP', 'currency_exponent' => 2, 'owner_user_id' => $owner->id, 'created_by' => $owner->id]);
         TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $owner->id, 'role' => 'owner', 'status' => 'active', 'joined_at' => now(), 'created_by' => $owner->id]);
+
         return $tracker;
     }
 
@@ -45,7 +48,9 @@ class ItineraryTest extends TestCase
 
     public function test_viewer_can_read_but_cannot_change_an_itinerary(): void
     {
-        $owner = User::factory()->create(); $viewer = User::factory()->create(); $tracker = $this->tracker($owner);
+        $owner = User::factory()->create();
+        $viewer = User::factory()->create();
+        $tracker = $this->tracker($owner);
         TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $viewer->id, 'role' => 'viewer', 'status' => 'active', 'joined_at' => now(), 'created_by' => $owner->id]);
 
         $this->actingAs($viewer)->get(route('trackers.itinerary.index', $tracker))->assertOk();
@@ -80,9 +85,43 @@ class ItineraryTest extends TestCase
         $this->actingAs($owner)->get(route('trackers.itinerary.navigate', [$tracker, $otherDay]))->assertNotFound();
     }
 
+    public function test_active_member_can_share_and_stop_a_short_lived_live_location(): void
+    {
+        Event::fake([TrackerLiveLocationUpdated::class]);
+        $owner = User::factory()->create();
+        $member = User::factory()->create();
+        $tracker = $this->tracker($owner);
+        TrackerMember::create(['tracker_id' => $tracker->id, 'user_id' => $member->id, 'role' => 'viewer', 'status' => 'active', 'joined_at' => now(), 'created_by' => $owner->id]);
+        $day = ItineraryDay::create(['tracker_id' => $tracker->id, 'date' => '2027-04-10', 'route_mode' => 'walking', 'created_by' => $owner->id]);
+
+        $this->actingAs($member)->putJson(route('trackers.itinerary.live-location.update', [$tracker, $day]), [
+            'latitude' => 14.5995, 'longitude' => 120.9842, 'accuracy' => 8.5, 'heading' => 90, 'speed' => 1.2,
+        ])->assertOk()->assertJsonPath('location.user.id', $member->id)->assertJsonPath('location.latitude', 14.5995);
+
+        $this->actingAs($owner)->getJson(route('trackers.itinerary.live-locations.index', [$tracker, $day]))
+            ->assertOk()->assertJsonCount(1, 'locations')->assertJsonPath('locations.0.user.name', $member->name);
+        Event::assertDispatched(TrackerLiveLocationUpdated::class, fn ($event) => $event->user->is($member) && $event->location !== null);
+
+        $this->actingAs($member)->deleteJson(route('trackers.itinerary.live-location.destroy', [$tracker, $day]))->assertNoContent();
+        $this->actingAs($owner)->getJson(route('trackers.itinerary.live-locations.index', [$tracker, $day]))->assertJsonCount(0, 'locations');
+        Event::assertDispatched(TrackerLiveLocationUpdated::class, fn ($event) => $event->user->is($member) && $event->location === null);
+    }
+
+    public function test_non_member_cannot_read_or_publish_tracker_live_locations(): void
+    {
+        $owner = User::factory()->create();
+        $outsider = User::factory()->create();
+        $tracker = $this->tracker($owner);
+        $day = ItineraryDay::create(['tracker_id' => $tracker->id, 'date' => '2027-04-10', 'route_mode' => 'walking', 'created_by' => $owner->id]);
+
+        $this->actingAs($outsider)->getJson(route('trackers.itinerary.live-locations.index', [$tracker, $day]))->assertForbidden();
+        $this->actingAs($outsider)->putJson(route('trackers.itinerary.live-location.update', [$tracker, $day]), ['latitude' => 14, 'longitude' => 121, 'accuracy' => 10])->assertForbidden();
+    }
+
     public function test_reorder_requires_and_updates_the_complete_day(): void
     {
-        $owner = User::factory()->create(); $tracker = $this->tracker($owner);
+        $owner = User::factory()->create();
+        $tracker = $this->tracker($owner);
         $day = ItineraryDay::create(['tracker_id' => $tracker->id, 'date' => '2027-04-10', 'route_mode' => 'walking', 'created_by' => $owner->id]);
         $first = ItineraryItem::create(['itinerary_day_id' => $day->id, 'title' => 'Temple', 'type' => 'place', 'sort_order' => 0, 'created_by' => $owner->id]);
         $second = ItineraryItem::create(['itinerary_day_id' => $day->id, 'title' => 'Lunch', 'type' => 'food', 'sort_order' => 1, 'created_by' => $owner->id]);
@@ -95,8 +134,10 @@ class ItineraryTest extends TestCase
 
     public function test_item_from_another_tracker_cannot_be_changed(): void
     {
-        $owner = User::factory()->create(); $otherOwner = User::factory()->create();
-        $tracker = $this->tracker($owner); $other = $this->tracker($otherOwner);
+        $owner = User::factory()->create();
+        $otherOwner = User::factory()->create();
+        $tracker = $this->tracker($owner);
+        $other = $this->tracker($otherOwner);
         $day = ItineraryDay::create(['tracker_id' => $other->id, 'date' => '2027-05-01', 'route_mode' => 'driving', 'created_by' => $otherOwner->id]);
         $item = ItineraryItem::create(['itinerary_day_id' => $day->id, 'title' => 'Hotel', 'type' => 'accommodation', 'created_by' => $otherOwner->id]);
 
@@ -105,7 +146,8 @@ class ItineraryTest extends TestCase
 
     public function test_owner_can_complete_and_reopen_an_itinerary_stop(): void
     {
-        $owner = User::factory()->create(); $tracker = $this->tracker($owner);
+        $owner = User::factory()->create();
+        $tracker = $this->tracker($owner);
         $day = ItineraryDay::create(['tracker_id' => $tracker->id, 'date' => '2027-04-10', 'route_mode' => 'driving', 'created_by' => $owner->id]);
         $item = ItineraryItem::create(['itinerary_day_id' => $day->id, 'title' => 'Garden', 'type' => 'place', 'created_by' => $owner->id]);
 
@@ -124,7 +166,8 @@ class ItineraryTest extends TestCase
             'geometry' => ['type' => 'LineString', 'coordinates' => [[140.39, 35.77], [139.70, 35.69]]],
             'distance' => 81200.5, 'duration' => 4800.2, 'legs' => [['distance' => 81200.5, 'duration' => 4800.2]],
         ]]])]);
-        $owner = User::factory()->create(); $tracker = $this->tracker($owner);
+        $owner = User::factory()->create();
+        $tracker = $this->tracker($owner);
         $day = ItineraryDay::create(['tracker_id' => $tracker->id, 'date' => '2027-04-10', 'route_mode' => 'driving', 'created_by' => $owner->id]);
         foreach ([['Airport', 35.77, 140.39], ['Hotel', 35.69, 139.70]] as $index => [$title, $latitude, $longitude]) {
             ItineraryItem::create(['itinerary_day_id' => $day->id, 'title' => $title, 'type' => 'place', 'latitude' => $latitude, 'longitude' => $longitude, 'sort_order' => $index, 'created_by' => $owner->id]);
@@ -137,7 +180,8 @@ class ItineraryTest extends TestCase
 
     public function test_expense_can_be_linked_only_to_an_item_in_the_same_tracker(): void
     {
-        $owner = User::factory()->create(); $tracker = $this->tracker($owner);
+        $owner = User::factory()->create();
+        $tracker = $this->tracker($owner);
         $day = ItineraryDay::create(['tracker_id' => $tracker->id, 'date' => '2027-04-10', 'route_mode' => 'walking', 'created_by' => $owner->id]);
         $item = ItineraryItem::create(['itinerary_day_id' => $day->id, 'title' => 'Dinner', 'type' => 'food', 'created_by' => $owner->id]);
         $payload = ['description' => 'Ramen', 'amount' => '500.00', 'paid_by_user_id' => $owner->id, 'expense_date' => '2027-04-10', 'participants' => [$owner->id], 'itinerary_item_id' => $item->id];

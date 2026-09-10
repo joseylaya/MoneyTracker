@@ -1,16 +1,21 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { loadGoogleMaps } from '@/lib/googleMaps';
-import { Check, CheckCircle2, ChevronRight, ChevronUp, Compass, GripVertical, LocateFixed, Map as MapIcon, MapPin, Navigation, Pause, Play, Route, X } from 'lucide-react';
-import { router } from '@inertiajs/react';
+import { Check, CheckCircle2, ChevronRight, ChevronUp, Compass, GripVertical, LocateFixed, Map as MapIcon, MapPin, Navigation, Pause, Play, Radio, Route, X } from 'lucide-react';
+import { router, usePage } from '@inertiajs/react';
 import { createPortal } from 'react-dom';
 
-export default function DayMap({ trackerId, day, canManage = false, navigationHref = null, navigationOnly = false, backHref = null }) {
+export default function DayMap({ trackerId, day, canManage = false, navigationHref = null, navigationOnly = false, backHref = null, initialLiveSharing = false }) {
+    const currentUserId = usePage().props.auth?.user?.id;
     const container = useRef(null);
     const mapRef = useRef(null);
     const routeCoordinatesRef = useRef([]);
     const itineraryCoordinatesRef = useRef([]);
     const routeMetricsRef = useRef(null);
     const userMarkerRef = useRef(null);
+    const memberMarkersRef = useRef(new Map());
+    const memberAccuracyRef = useRef(new Map());
+    const lastSharedAtRef = useRef(0);
+    const liveSharingRef = useRef(initialLiveSharing);
     const navigationMarkerRef = useRef(null);
     const navigationPolylinesRef = useRef([]);
     const rerouteInFlightRef = useRef(false);
@@ -38,6 +43,9 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
     const [sheetExpanded, setSheetExpanded] = useState(false);
     const [navigation, setNavigation] = useState(null);
     const [navigationError, setNavigationError] = useState('');
+    const [liveSharing, setLiveSharing] = useState(initialLiveSharing);
+    const [liveLocations, setLiveLocations] = useState({});
+    const [mapReady, setMapReady] = useState(false);
     const [completedIds, setCompletedIds] = useState(() => new Set(completedIdsRef.current));
     const [completingId, setCompletingId] = useState(null);
     const [orderedItems, setOrderedItems] = useState(day.items);
@@ -118,6 +126,7 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
                     ],
                 });
                 mapRef.current = map;
+                setMapReady(true);
                 mapClickListener = map.addListener('click', () => setSheetExpanded(false));
                 const bounds = new maps.LatLngBounds();
                 const infoWindow = new maps.InfoWindow();
@@ -185,9 +194,80 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
             previousPositionRef.current = null;
             animatedPositionRef.current = null;
             mapRef.current = null;
+            setMapReady(false);
             mapClickListener?.remove();
         };
     }, [trackerId, day.id, day.route_mode, stopKey]);
+
+    useEffect(() => {
+        fetch(route('trackers.itinerary.live-locations.index', [trackerId, day.id]), { headers: { Accept: 'application/json' } })
+            .then((response) => response.ok ? response.json() : Promise.reject())
+            .then(({ locations }) => setLiveLocations(Object.fromEntries(locations.filter((item) => item.user.id !== currentUserId).map((item) => [item.user.id, item]))))
+            .catch(() => {});
+        if (!window.Echo) return undefined;
+        const channel = window.Echo.private(`tracker.${trackerId}`);
+        channel.listen('.tracker.live-location.updated', ({ day_id, user, location }) => {
+            if (day_id !== day.id || user.id === currentUserId) return;
+            setLiveLocations((current) => {
+                const next = { ...current };
+                if (location) next[user.id] = location; else delete next[user.id];
+                return next;
+            });
+        });
+        const expiry = window.setInterval(() => {
+            const cutoff = Date.now() - 30000;
+            setLiveLocations((current) => Object.fromEntries(Object.entries(current).filter(([, item]) => new Date(item.updated_at).getTime() >= cutoff)));
+        }, 5000);
+        return () => { window.clearInterval(expiry); window.Echo.leave(`private-tracker.${trackerId}`); };
+    }, [trackerId, day.id, currentUserId]);
+
+    useEffect(() => {
+        if (!mapReady || !window.google?.maps) return;
+        const maps = window.google.maps;
+        const activeIds = new Set(Object.keys(liveLocations).map(Number));
+        memberMarkersRef.current.forEach((marker, userId) => { if (!activeIds.has(userId)) { marker.setMap(null); memberMarkersRef.current.delete(userId); } });
+        memberAccuracyRef.current.forEach((circle, userId) => { if (!activeIds.has(userId)) { circle.setMap(null); memberAccuracyRef.current.delete(userId); } });
+        Object.values(liveLocations).forEach((item) => {
+            const position = { lat: Number(item.latitude), lng: Number(item.longitude) };
+            let marker = memberMarkersRef.current.get(item.user.id);
+            if (!marker) {
+                marker = new maps.Marker({ map: mapRef.current, position, title: `${item.user.name} · live location`, label: { text: item.user.name.slice(0, 1).toUpperCase(), color: '#ffffff', fontWeight: '700' }, icon: { path: maps.SymbolPath.CIRCLE, fillColor: '#3158cf', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 3, scale: 12 }, zIndex: 45 });
+                memberMarkersRef.current.set(item.user.id, marker);
+            } else marker.setPosition(position);
+            let circle = memberAccuracyRef.current.get(item.user.id);
+            if (!circle) {
+                circle = new maps.Circle({ map: mapRef.current, center: position, radius: item.accuracy, fillColor: '#3158cf', fillOpacity: .12, strokeColor: '#3158cf', strokeOpacity: .35, strokeWeight: 1, zIndex: 10 });
+                memberAccuracyRef.current.set(item.user.id, circle);
+            } else { circle.setCenter(position); circle.setRadius(item.accuracy); }
+        });
+    }, [liveLocations, mapReady]);
+
+    useEffect(() => () => {
+        memberMarkersRef.current.forEach((marker) => marker.setMap(null));
+        memberAccuracyRef.current.forEach((circle) => circle.setMap(null));
+    }, []);
+
+    const stopLiveSharing = (updateState = true) => {
+        liveSharingRef.current = false;
+        if (updateState) setLiveSharing(false);
+        const token = document.querySelector('meta[name="csrf-token"]')?.content;
+        fetch(route('trackers.itinerary.live-location.destroy', [trackerId, day.id]), { method: 'DELETE', keepalive: true, headers: { Accept: 'application/json', ...(token ? { 'X-CSRF-TOKEN': token } : {}) } }).catch(() => {});
+    };
+
+    useEffect(() => () => {
+        if (liveSharingRef.current) stopLiveSharing(false);
+    }, [trackerId, day.id]);
+
+    const sharePosition = (coords) => {
+        if (!liveSharingRef.current || Date.now() - lastSharedAtRef.current < 3000) return;
+        lastSharedAtRef.current = Date.now();
+        const token = document.querySelector('meta[name="csrf-token"]')?.content;
+        fetch(route('trackers.itinerary.live-location.update', [trackerId, day.id]), {
+            method: 'PUT', keepalive: true,
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(token ? { 'X-CSRF-TOKEN': token } : {}) },
+            body: JSON.stringify({ latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy, heading: Number.isFinite(coords.heading) ? coords.heading : null, speed: Number.isFinite(coords.speed) ? coords.speed : null }),
+        }).catch(() => setNavigationError('Navigation continues, but live location could not be shared.'));
+    };
 
     const distanceBetween = (from, to) => {
         const radians = (degrees) => degrees * Math.PI / 180;
@@ -264,6 +344,7 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
     };
 
     const navigationUpdate = ({ coords }) => {
+        sharePosition(coords);
         const map = mapRef.current;
         const maps = window.google?.maps;
         if (!map || !maps) return;
@@ -273,6 +354,16 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
         const reportedHeading = Number.isFinite(coords.heading) ? coords.heading : null;
         if (reportedHeading != null && (coords.speed == null || coords.speed > 0.5)) lastHeadingRef.current = reportedHeading;
         else if (previousPosition && movementDistance > 2) lastHeadingRef.current = bearingBetween(previousPosition, position);
+        else if (lastHeadingRef.current === 0 && routeCoordinatesRef.current.length > 1) {
+            let nearestIndex = 0;
+            let nearestDistance = Infinity;
+            routeCoordinatesRef.current.forEach((point, index) => {
+                const distance = distanceBetween(position, point);
+                if (distance < nearestDistance) { nearestDistance = distance; nearestIndex = index; }
+            });
+            const nextPoint = routeCoordinatesRef.current[Math.min(nearestIndex + 1, routeCoordinatesRef.current.length - 1)];
+            if (nextPoint && distanceBetween(position, nextPoint) > 1) lastHeadingRef.current = bearingBetween(position, nextPoint);
+        }
         previousPositionRef.current = position;
         if (!navigationMarkerRef.current) {
             navigationMarkerRef.current = new maps.Marker({
@@ -314,7 +405,10 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
 
     const startNavigation = () => {
         if (navigationHref && !navigationOnly) {
-            router.visit(navigationHref);
+            const share = window.confirm('Share your live location with active members of this tracker while navigating?\n\nChoose Cancel to navigate privately.');
+            const destination = new URL(navigationHref, window.location.origin);
+            if (share) destination.searchParams.set('share_location', '1');
+            router.visit(destination.toString());
             return;
         }
         setNavigationError('');
@@ -330,6 +424,7 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
     };
 
     const stopNavigation = () => {
+        if (liveSharingRef.current) stopLiveSharing();
         if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
         navigationMarkerRef.current?.setMap(null);
@@ -359,6 +454,13 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
         if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
         setPaused(true);
+    };
+
+    const toggleLiveSharing = () => {
+        if (liveSharingRef.current) { stopLiveSharing(); return; }
+        liveSharingRef.current = true;
+        setLiveSharing(true);
+        lastSharedAtRef.current = 0;
     };
 
     const recenter = () => {
@@ -396,8 +498,11 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
         const nextHeadingUp = !headingUpRef.current;
         headingUpRef.current = nextHeadingUp;
         setHeadingUp(nextHeadingUp);
-        mapRef.current?.setTilt(0);
-        mapRef.current?.setHeading(nextHeadingUp ? lastHeadingRef.current : 0);
+        const heading = nextHeadingUp ? lastHeadingRef.current : 0;
+        mapRef.current?.moveCamera({ heading, tilt: 0 });
+        if (navigationMarkerRef.current && window.google?.maps) {
+            navigationMarkerRef.current.setIcon({ path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW, fillColor: '#13a856', fillOpacity: 1, rotation: nextHeadingUp ? 0 : lastHeadingRef.current, strokeColor: '#ffffff', strokeWeight: 3, scale: 7 });
+        }
     };
 
     const startSheetDrag = (event) => {
@@ -571,17 +676,18 @@ export default function DayMap({ trackerId, day, canManage = false, navigationHr
             <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+7.25rem)] z-20 flex flex-col gap-2 sm:right-6 sm:top-[10rem]">
                 <button type="button" onClick={recenter} className="flex size-12 items-center justify-center rounded-full bg-white text-[#13a856] shadow-lg" aria-label="Recenter map"><LocateFixed size={22}/></button>
                 <button type="button" onClick={showOverview} className="flex size-12 items-center justify-center rounded-full bg-white text-slate-700 shadow-lg" aria-label="Show route overview"><Route size={21}/></button>
-                <button type="button" onClick={toggleOrientation} className={`relative flex size-12 items-center justify-center rounded-full shadow-lg transition ${headingUp ? 'bg-[#173f2a] text-white' : 'bg-white text-slate-700'}`} aria-label={headingUp ? 'Switch to north-up map' : 'Switch to heading-up map'} title={headingUp ? 'Heading up' : 'North up'}><Compass size={23} style={{ transform: headingUp ? `rotate(${-lastHeadingRef.current}deg)` : 'rotate(0deg)' }} className="transition-transform"/><span className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full bg-white text-[9px] font-black text-[#138a48] shadow">{headingUp ? '↑' : 'N'}</span></button>
+                <button type="button" onClick={toggleOrientation} className={`flex size-12 items-center justify-center rounded-full shadow-lg transition active:scale-95 ${headingUp ? 'bg-[#173f2a] text-white' : 'bg-white text-slate-700'}`} aria-label={headingUp ? 'Map follows your direction. Switch to north up.' : 'Map points north. Switch to heading up.'} title={headingUp ? 'Switch to north up' : 'Switch to heading up'}><Compass size={22} style={{ transform: headingUp ? `rotate(${-lastHeadingRef.current}deg)` : 'rotate(0deg)' }} className="transition-transform"/></button>
             </div>
-            <div className="absolute inset-x-0 bottom-0 z-20 pb-[env(safe-area-inset-bottom)] sm:px-6 sm:pb-[max(.75rem,env(safe-area-inset-bottom))]">
-                <div className="mx-auto max-h-[calc(100dvh-env(safe-area-inset-top)-8.25rem-env(safe-area-inset-bottom))] max-w-3xl overflow-y-auto overscroll-contain rounded-t-[2rem] border-t border-slate-200 bg-white px-4 pb-4 pt-4 shadow-[0_-10px_40px_rgba(15,23,42,.22)] sm:rounded-[2rem] sm:p-6">
+            <div className="absolute inset-x-0 bottom-0 z-20 sm:px-6">
+                <div className="mx-auto max-h-[calc(100dvh-env(safe-area-inset-top)-8.25rem)] max-w-3xl overflow-y-auto overscroll-contain rounded-t-[2rem] border-t border-slate-200 bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 shadow-[0_-10px_40px_rgba(15,23,42,.22)] sm:px-6 sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:pt-6">
                     <button type="button" onClick={toggleSheet} onPointerDown={startSheetDrag} onPointerUp={finishSheetDrag} className="-mx-2 -mt-2 flex w-[calc(100%+1rem)] touch-none items-center justify-between gap-3 rounded-2xl px-2 py-2 text-left" aria-expanded={sheetExpanded} aria-label={sheetExpanded ? 'Collapse route details' : 'Expand route details'}>
                         <div><p className="font-display text-3xl font-bold leading-none sm:text-4xl">{arrivalTime}</p><p className="mt-1.5 text-sm font-semibold text-slate-500">Estimated arrival</p></div>
                         <div className="flex items-center gap-2"><span className="rounded-full bg-indigo-100 px-3 py-1.5 text-sm font-bold text-indigo-700">{navigationDuration || duration}</span><span className="text-lg font-semibold text-slate-700">{navigationDistance || distance}</span><ChevronUp size={22} className={`ml-1 text-slate-400 transition-transform duration-300 ${sheetExpanded ? 'rotate-180' : ''}`}/></div>
                     </button>
-                    <div className="sticky top-0 z-10 mt-3 grid grid-cols-3 gap-2 rounded-2xl bg-white pb-1 sm:gap-3">
+                    <div className="sticky top-0 z-10 mt-3 grid grid-cols-4 gap-2 rounded-2xl bg-white pb-1 sm:gap-3">
                         <button type="button" onClick={showOverview} className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-[#eaf1ff] px-1 text-xs font-bold text-slate-800 sm:min-h-14 sm:gap-2 sm:rounded-2xl sm:px-2 sm:text-sm"><MapIcon size={18}/>Overview</button>
                         <button type="button" onClick={togglePause} className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-[#eaf1ff] px-1 text-xs font-bold text-slate-800 sm:min-h-14 sm:gap-2 sm:rounded-2xl sm:px-2 sm:text-sm">{paused ? <Play size={18}/> : <Pause size={18}/>} {paused ? 'Resume' : 'Pause'}</button>
+                        <button type="button" onClick={toggleLiveSharing} className={`flex min-h-12 items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-bold sm:min-h-14 sm:rounded-2xl sm:text-sm ${liveSharing ? 'bg-[#dcfce7] text-[#138a48]' : 'bg-[#eaf1ff] text-slate-800'}`}><Radio size={17}/>{liveSharing ? 'Sharing' : 'Share'}</button>
                         <button type="button" onClick={stopNavigation} className="flex min-h-12 items-center justify-center gap-1.5 rounded-xl bg-red-100 px-1 text-xs font-bold text-red-700 sm:min-h-14 sm:gap-2 sm:rounded-2xl sm:px-2 sm:text-sm"><X size={18}/>End</button>
                     </div>
                     <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${sheetExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}><div className="overflow-hidden">

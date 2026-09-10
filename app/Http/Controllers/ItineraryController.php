@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\ItineraryDay;
 use App\Models\ItineraryItem;
 use App\Models\Tracker;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -41,6 +41,7 @@ class ItineraryController extends Controller
             'tracker' => $tracker,
             'day' => $day,
             'canManage' => $request->user()->can('update', $tracker),
+            'shareLiveLocation' => $request->boolean('share_location'),
         ]);
     }
 
@@ -54,6 +55,7 @@ class ItineraryController extends Controller
             'route_mode' => ['required', Rule::in(['driving', 'walking'])],
         ]);
         $tracker->itineraryDays()->create([...$data, 'sort_order' => $tracker->itineraryDays()->max('sort_order') + 1, 'created_by' => $request->user()->id]);
+
         return back()->with('success', 'Itinerary day added.');
     }
 
@@ -68,6 +70,7 @@ class ItineraryController extends Controller
             'route_mode' => ['required', Rule::in(['driving', 'walking'])],
         ]);
         $day->update([...$data, 'updated_by' => $request->user()->id]);
+
         return back()->with('success', 'Itinerary day updated.');
     }
 
@@ -76,6 +79,7 @@ class ItineraryController extends Controller
         $this->authorize('update', $tracker);
         $this->ensureDay($tracker, $day);
         $day->delete();
+
         return back()->with('success', 'Itinerary day deleted.');
     }
 
@@ -85,6 +89,7 @@ class ItineraryController extends Controller
         $this->ensureDay($tracker, $day);
         $data = $this->itemData($request);
         $day->items()->create([...$data, 'sort_order' => $day->items()->max('sort_order') + 1, 'created_by' => $request->user()->id]);
+
         return back()->with('success', 'Itinerary item added.');
     }
 
@@ -93,6 +98,7 @@ class ItineraryController extends Controller
         $this->authorize('update', $tracker);
         $this->ensureItem($tracker, $item);
         $item->update([...$this->itemData($request), 'updated_by' => $request->user()->id]);
+
         return back()->with('success', 'Itinerary item updated.');
     }
 
@@ -101,6 +107,7 @@ class ItineraryController extends Controller
         $this->authorize('update', $tracker);
         $this->ensureItem($tracker, $item);
         $item->delete();
+
         return back()->with('success', 'Itinerary item deleted.');
     }
 
@@ -127,7 +134,10 @@ class ItineraryController extends Controller
         $submitted = collect($data['item_ids'])->sort()->values()->all();
         abort_unless($actual === $submitted, 422, 'Every item in the day must be included.');
         DB::transaction(fn () => collect($data['item_ids'])->each(fn ($id, $index) => ItineraryItem::whereKey($id)->update(['sort_order' => $index, 'updated_by' => $request->user()->id])));
-        if ($request->expectsJson()) return response()->json(['item_ids' => $data['item_ids']]);
+        if ($request->expectsJson()) {
+            return response()->json(['item_ids' => $data['item_ids']]);
+        }
+
         return back()->with('success', 'Itinerary reordered.');
     }
 
@@ -145,9 +155,17 @@ class ItineraryController extends Controller
             'longitude' => ['nullable', 'numeric', 'between:-180,180', 'required_with:latitude'],
             'notes' => ['nullable', 'string', 'max:3000'],
         ]);
+
         return array_map(fn ($value) => $value === '' ? null : $value, $data);
     }
 
-    private function ensureDay(Tracker $tracker, ItineraryDay $day): void { abort_unless($day->tracker_id === $tracker->id, 404); }
-    private function ensureItem(Tracker $tracker, ItineraryItem $item): void { abort_unless($item->day()->where('tracker_id', $tracker->id)->exists(), 404); }
+    private function ensureDay(Tracker $tracker, ItineraryDay $day): void
+    {
+        abort_unless($day->tracker_id === $tracker->id, 404);
+    }
+
+    private function ensureItem(Tracker $tracker, ItineraryItem $item): void
+    {
+        abort_unless($item->day()->where('tracker_id', $tracker->id)->exists(), 404);
+    }
 }

@@ -1,16 +1,17 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\TrackerController;
 use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\ExpenseCommentController;
-use App\Http\Controllers\TrackerConversationController;
-use App\Http\Controllers\PushDeviceController;
-use App\Http\Controllers\TrackerNotificationController;
 use App\Http\Controllers\FirebaseMessagingServiceWorkerController;
-use App\Http\Controllers\PersonalFinanceController;
 use App\Http\Controllers\ItineraryController;
 use App\Http\Controllers\ItineraryRouteController;
+use App\Http\Controllers\PersonalFinanceController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PushDeviceController;
+use App\Http\Controllers\TrackerController;
+use App\Http\Controllers\TrackerConversationController;
+use App\Http\Controllers\TrackerLiveLocationController;
+use App\Http\Controllers\TrackerNotificationController;
 use App\Http\Controllers\TrackerPlanningController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -41,22 +42,22 @@ Route::middleware('auth')->group(function () {
     Route::delete('/notifications/{notification}/group', [TrackerNotificationController::class, 'dismissGroup'])->name('notifications.group.dismiss');
     Route::delete('/notifications/{notification}', [TrackerNotificationController::class, 'dismiss'])->name('notifications.dismiss');
     Route::middleware('email')->group(function () {
-    Route::get('/home', [PersonalFinanceController::class, 'index'])->name('home');
-    Route::get('/personal/accounts', [PersonalFinanceController::class, 'accounts'])->name('personal.accounts');
-    Route::post('/personal/accounts', [PersonalFinanceController::class, 'storeAccount'])->name('personal.accounts.store');
-    Route::patch('/personal/accounts/{account}', [PersonalFinanceController::class, 'updateAccount'])->name('personal.accounts.update');
-    Route::delete('/personal/accounts/{account}', [PersonalFinanceController::class, 'destroyAccount'])->name('personal.accounts.destroy');
-    Route::post('/personal/income', [PersonalFinanceController::class, 'storeIncome'])->name('personal.income.store');
-    Route::post('/personal/expenses', [PersonalFinanceController::class, 'storeExpense'])->name('personal.expenses.store');
-    Route::post('/personal/transfers', [PersonalFinanceController::class, 'transfer'])->name('personal.transfers.store');
-    Route::post('/personal/commitments', [PersonalFinanceController::class, 'storeCommitment'])->name('personal.commitments.store');
-    Route::post('/personal/commitments/{commitment}/pay', [PersonalFinanceController::class, 'payCommitment'])->name('personal.commitments.pay');
-    Route::patch('/personal/commitments/{commitment}', [PersonalFinanceController::class, 'updateCommitment'])->name('personal.commitments.update');
-    Route::delete('/personal/commitments/{commitment}', [PersonalFinanceController::class, 'destroyCommitment'])->name('personal.commitments.destroy');
-    Route::patch('/personal/settings', [PersonalFinanceController::class, 'saveSettings'])->name('personal.settings.update');
-    Route::put('/personal/buckets', [PersonalFinanceController::class, 'saveBucket'])->name('personal.buckets.save');
-    Route::delete('/personal/buckets/{bucket}', [PersonalFinanceController::class, 'destroyBucket'])->name('personal.buckets.destroy');
-    Route::post('/personal/reconciliations', [PersonalFinanceController::class, 'reconcile'])->name('personal.reconciliations.store');
+        Route::get('/home', [PersonalFinanceController::class, 'index'])->name('home');
+        Route::get('/personal/accounts', [PersonalFinanceController::class, 'accounts'])->name('personal.accounts');
+        Route::post('/personal/accounts', [PersonalFinanceController::class, 'storeAccount'])->name('personal.accounts.store');
+        Route::patch('/personal/accounts/{account}', [PersonalFinanceController::class, 'updateAccount'])->name('personal.accounts.update');
+        Route::delete('/personal/accounts/{account}', [PersonalFinanceController::class, 'destroyAccount'])->name('personal.accounts.destroy');
+        Route::post('/personal/income', [PersonalFinanceController::class, 'storeIncome'])->name('personal.income.store');
+        Route::post('/personal/expenses', [PersonalFinanceController::class, 'storeExpense'])->name('personal.expenses.store');
+        Route::post('/personal/transfers', [PersonalFinanceController::class, 'transfer'])->name('personal.transfers.store');
+        Route::post('/personal/commitments', [PersonalFinanceController::class, 'storeCommitment'])->name('personal.commitments.store');
+        Route::post('/personal/commitments/{commitment}/pay', [PersonalFinanceController::class, 'payCommitment'])->name('personal.commitments.pay');
+        Route::patch('/personal/commitments/{commitment}', [PersonalFinanceController::class, 'updateCommitment'])->name('personal.commitments.update');
+        Route::delete('/personal/commitments/{commitment}', [PersonalFinanceController::class, 'destroyCommitment'])->name('personal.commitments.destroy');
+        Route::patch('/personal/settings', [PersonalFinanceController::class, 'saveSettings'])->name('personal.settings.update');
+        Route::put('/personal/buckets', [PersonalFinanceController::class, 'saveBucket'])->name('personal.buckets.save');
+        Route::delete('/personal/buckets/{bucket}', [PersonalFinanceController::class, 'destroyBucket'])->name('personal.buckets.destroy');
+        Route::post('/personal/reconciliations', [PersonalFinanceController::class, 'reconcile'])->name('personal.reconciliations.store');
     });
     Route::get('/trackers', [TrackerController::class, 'index'])->name('trackers.index');
     Route::get('/trackers/create', [TrackerController::class, 'create'])->name('trackers.create');
@@ -82,6 +83,9 @@ Route::middleware('auth')->group(function () {
     Route::delete('/trackers/{tracker}/itinerary/items/{item}', [ItineraryController::class, 'destroyItem'])->name('trackers.itinerary.items.destroy');
     Route::patch('/trackers/{tracker}/itinerary/reorder', [ItineraryController::class, 'reorder'])->name('trackers.itinerary.reorder');
     Route::get('/trackers/{tracker}/itinerary/days/{day}/route', ItineraryRouteController::class)->name('trackers.itinerary.route');
+    Route::get('/trackers/{tracker}/itinerary/days/{day}/live-locations', [TrackerLiveLocationController::class, 'index'])->name('trackers.itinerary.live-locations.index');
+    Route::put('/trackers/{tracker}/itinerary/days/{day}/live-location', [TrackerLiveLocationController::class, 'update'])->middleware('throttle:30,1')->name('trackers.itinerary.live-location.update');
+    Route::delete('/trackers/{tracker}/itinerary/days/{day}/live-location', [TrackerLiveLocationController::class, 'destroy'])->name('trackers.itinerary.live-location.destroy');
     Route::post('/trackers/{tracker}/share-link', [TrackerController::class, 'shareLink'])->name('trackers.share-link.store');
     Route::get('/trackers/{tracker}/members', [TrackerController::class, 'members'])->name('trackers.members.index');
     Route::get('/trackers/{tracker}/members/suggestions', [TrackerController::class, 'memberSuggestions'])->name('trackers.members.suggestions');
@@ -107,6 +111,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/activity', [ActivityController::class, 'index'])->name('activity.index');
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::post('/profile/photo', [ProfileController::class, 'updatePhoto'])->name('profile.photo.update');
+    Route::delete('/profile/photo', [ProfileController::class, 'destroyPhoto'])->name('profile.photo.destroy');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
