@@ -29,8 +29,9 @@ RUN npm run build
 
 FROM php:8.4-fpm-alpine
 WORKDIR /var/www/html
-RUN apk add --no-cache icu-dev libzip-dev oniguruma-dev postgresql-dev $PHPIZE_DEPS \
-    && docker-php-ext-install -j"$(nproc)" intl mbstring opcache pcntl pdo_pgsql zip
+RUN apk add --no-cache icu-dev libjpeg-turbo-dev libpng-dev libwebp-dev libzip-dev oniguruma-dev postgresql-dev $PHPIZE_DEPS \
+    && docker-php-ext-configure gd --with-jpeg --with-webp \
+    && docker-php-ext-install -j"$(nproc)" gd intl mbstring opcache pcntl pdo_pgsql zip
 RUN docker-php-ext-install -j1 bcmath
 COPY --from=vendor /app/vendor ./vendor
 COPY . .
